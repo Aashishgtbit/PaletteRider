@@ -2,6 +2,8 @@
 
 Step into a famous painting and ride a bicycle through it.
 
+**▶ [Play it in your browser](https://aashishgtbit.github.io/PaletteRider/)**
+
 Each chapter turns a real artwork into a small 3D city you can explore. Something has fallen into the streets: gather it, carry it home before dawn, and land your jumps cleanly, or half your load slips away.
 
 **Chapter 1: Castle and Sun** (Paul Klee, 1928). A patchwork city of coloured blocks and triangle roofs, with traffic, townsfolk, rooftops to ride on and ramps to flip from. Collect the little suns and bring them to the castle.
@@ -33,7 +35,7 @@ npm run dev
 
 Open the address it prints. Choose a chapter on the title screen, or add `?chapter=2` to the address.
 
-`npm run build` writes a static site to `dist/` that can be hosted anywhere, including GitHub Pages.
+`npm run build` writes a static site to `dist/` that can be hosted anywhere. Every push to `main` publishes it to GitHub Pages automatically (see `.github/workflows/pages.yml`).
 
 ## Made with
 
