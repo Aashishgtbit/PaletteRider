@@ -192,6 +192,17 @@
       #nextCh { display: none; margin-top: 16px; }
       .textlink { display: inline-block; margin-top: 18px; color: var(--dim); font-size: 12px; letter-spacing: 0.12em; pointer-events: auto; }
       .textlink:hover { color: var(--ink); }
+      /* tip link: hidden until a tip page is set in src/support.js */
+      .tip, .tipline { display: none; }
+      body.has-tip .tip { display: inline-block; }
+      body.has-tip .tipline { display: block; }
+      .tipline { margin-top: 26px; font-size: 13px; color: var(--dim); line-height: 2.2; }
+      .tip {
+        margin-top: 14px; pointer-events: auto; text-decoration: none; font-size: 13px; letter-spacing: 0.1em;
+        color: var(--ink); padding: 8px 18px; border-radius: 999px; border: 1px solid var(--glow);
+        background: rgba(0, 0, 0, 0.25);
+      }
+      .tip:hover { background: var(--glow); color: #06121c; }
       #nextCh.on { display: inline-block; }
 
       /* painting intro: the original hangs on a wall; starting the ride zooms into it */
@@ -318,6 +329,7 @@
         <button id="resume">Resume</button>
         <div class="hint">or press P, Esc or Enter</div>
         <a id="restart" href="#" class="textlink">Restart this ride</a>
+        <div><a class="tip" target="_blank" rel="noopener"></a></div>
       </div>
     </div>
 
@@ -329,6 +341,7 @@
         <button id="again">Ride again</button>
         <div class="hint">or press Enter</div>
         <a id="nextCh" href="?chapter=2">Go to chapter 2 ›</a>
+        <div class="tipline">Enjoyed the ride?<br><a class="tip" target="_blank" rel="noopener"></a></div>
       </div>
     </div>
 

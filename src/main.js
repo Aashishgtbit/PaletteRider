@@ -8,6 +8,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import * as valley from './world.js';
 import * as city from './city.js';
 import * as arles from './arles.js';
+import { TIP_URL, TIP_LABEL } from './support.js';
 
 // The painted city is the default world; add ?world=valley to ride the Himalayan valley.
 // Chapter 1 is the Klee city, chapter 2 is Van Gogh's Arles (?chapter=2).
@@ -514,6 +515,13 @@ function setPaused(on) {
   if (actx) (on ? actx.suspend() : actx.resume()).catch(() => {});
 }
 $('resume').onclick = () => setPaused(false);
+if (TIP_URL) {
+  document.body.classList.add('has-tip');
+  for (const a of document.querySelectorAll('a.tip')) {
+    a.href = TIP_URL;
+    a.textContent = `♥ ${TIP_LABEL}`;
+  }
+}
 $('restart').onclick = (e) => {
   e.preventDefault();
   startGame();
@@ -1052,3 +1060,4 @@ renderer.setAnimationLoop(frame);
 
 // handy for testing from the console
 window.__aurora = { begin, setPaused, hero, sim: (n, dt = 1 / 60) => { for (let i = 0; i < n; i++) tick(dt, clock.elapsedTime + i * dt); }, P, G, keys, stars, W, orbit, music, startGame, endGame, audioState: () => actx?.state };
+
