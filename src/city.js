@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 export const INFO = {
-  title: 'SUN COURIER',
+  title: 'PaletteRider',
   sub: 'Chapter 1 · Paul Klee · Castle and Sun · 1928',
   how: 'Little suns are scattered through the streets and over the rooftops. Gather them on your bicycle and carry them to the <em>castle</em> before dawn. Mind the traffic on the busy roads. The more you bring in one trip, the bigger the bonus — but land a jump badly and you spill half of them.',
   brief: 'Collect the little suns and carry them to the castle before dawn.',

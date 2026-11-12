@@ -1,4 +1,5 @@
-// Aurora Trail: ride the valley, gather fallen stars, carry them to the monastery before dawn.
+// PaletteRider: ride a bicycle through cities built from famous paintings, gather what has
+// fallen into the streets and deliver it before dawn.
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -13,7 +14,14 @@ import * as arles from './arles.js';
 const query = new URLSearchParams(location.search);
 const CHAPTER = [1, 2].includes(Number(query.get('chapter'))) ? Number(query.get('chapter')) : 1;
 const W = query.get('world') === 'valley' ? valley : CHAPTER === 2 ? arles : city;
-const BEST_KEY = 'aurora-trail-best' + (W.INFO.id ? '-' + W.INFO.id : '');
+const BEST_KEY = 'paletterider-best' + (W.INFO.id ? '-' + W.INFO.id : '');
+const HELP_KEY = 'paletterider-help';
+try {
+  // carry over a best score and settings saved before the game was renamed
+  for (const [now, before] of [[BEST_KEY, BEST_KEY.replace('paletterider', 'aurora-trail')], [HELP_KEY, 'aurora-trail-help']]) {
+    if (localStorage.getItem(now) === null && localStorage.getItem(before) !== null) localStorage.setItem(now, localStorage.getItem(before));
+  }
+} catch { /* private mode */ }
 const { buildWorld, heightAt, MON, HILL_H, WORLD_R, INFO } = W;
 
 const TAU = Math.PI * 2;
@@ -935,14 +943,14 @@ if (INFO.controls) {
 if (INFO.timeLabel) $('timeLabel').textContent = INFO.timeLabel;
 const caps = [...ctlEl.querySelectorAll('kbd[data-k]')];
 let helpHidden = false;
-try { helpHidden = localStorage.getItem('aurora-trail-help') === 'off'; } catch { /* private mode */ }
+try { helpHidden = localStorage.getItem(HELP_KEY) === 'off'; } catch { /* private mode */ }
 function applyHelp() {
   ctlEl.classList.toggle('hidden', helpHidden);
   $('btnHelp').classList.toggle('off', helpHidden);
 }
 function toggleHelp() {
   helpHidden = !helpHidden;
-  try { localStorage.setItem('aurora-trail-help', helpHidden ? 'off' : 'on'); } catch { /* private mode */ }
+  try { localStorage.setItem(HELP_KEY, helpHidden ? 'off' : 'on'); } catch { /* private mode */ }
   applyHelp();
 }
 function toggleMute() {

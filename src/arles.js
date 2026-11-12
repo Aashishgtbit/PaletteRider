@@ -6,7 +6,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 export const INFO = {
   id: 'ch2',
-  title: 'SUN COURIER',
+  title: 'PaletteRider',
   sub: 'Chapter 2 · Vincent van Gogh · Café Terrace at Night · 1888',
   how: 'The stars have fallen into the streets of Arles. Gather them on your bicycle and carry them to the <em>café</em> on the square before dawn, and watch them return to the sky. The more you bring in one trip, the bigger the bonus — but land a jump badly and you spill half of them.',
   brief: 'Collect the fallen stars and carry them to the café on the square before dawn.',
