@@ -311,8 +311,8 @@ function updateOthers(dt) {
     // on foot or on the bike
     o.bike.root.visible = !p.foot;
     o.walker.root.visible = !!p.foot;
-    const shown = p.foot ? o.walker.root : o.bike.root;
-    if (o.tag.parent !== shown) shown.add(o.tag);
+    const holder = p.foot ? o.walker.root : o.bike.root; // the name tag rides along with whichever is shown
+    if (o.tag.parent !== holder) holder.add(o.tag);
     if (p.foot) o.walker.step(p.speed, dt);
     o.bike.root.position.set(o.x, o.y, o.z);
     o.bike.root.rotation.y = o.yaw;

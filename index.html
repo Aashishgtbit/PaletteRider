@@ -180,13 +180,16 @@
         #brief { top: 186px; }
       }
 
+      /* full-screen screens (title, pause, end): scroll when they are taller than the screen,
+         as on a phone, while the ride itself keeps all touches for its own controls */
       .overlay {
-        position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+        position: fixed; inset: 0; display: none; justify-content: center;
         background: radial-gradient(ellipse at center, rgba(2, 8, 16, 0.35), rgba(2, 8, 16, 0.85));
-        text-align: center; padding: 24px;
+        text-align: center; padding: 24px; padding-bottom: calc(24px + env(safe-area-inset-bottom));
+        overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y;
       }
       .overlay.on { display: flex; }
-      .card { max-width: 560px; position: relative; }
+      .card { max-width: 560px; position: relative; margin: auto; } /* centred when it fits, from the top when it doesn't */
 
       #credit {
         position: fixed; right: 8px; bottom: 2px; z-index: 5; font: 10px ui-sans-serif, system-ui, sans-serif;
@@ -224,7 +227,7 @@
       /* painting intro: the original hangs on a wall; starting the ride zooms into it */
       #frame { display: none; }
       #menu.gallery::before {
-        content: ''; position: absolute; inset: 0;
+        content: ''; position: fixed; inset: 0; /* stays behind the card however far it scrolls */
         background: radial-gradient(ellipse at 50% 38%, #4a3832 0%, #241916 55%, #100a09 100%);
         transition: opacity 1s ease 0.45s;
       }
