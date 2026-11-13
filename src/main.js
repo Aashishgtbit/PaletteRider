@@ -453,8 +453,8 @@ function setupTouch() {
   stick.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     stickId = e.pointerId;
-    stick.setPointerCapture?.(e.pointerId);
     moveStick(e);
+    try { stick.setPointerCapture?.(e.pointerId); } catch { /* keep working without capture */ }
   });
   stick.addEventListener('pointermove', (e) => { if (e.pointerId === stickId) moveStick(e); });
   stick.addEventListener('pointerup', releaseStick);
@@ -652,13 +652,36 @@ function updateRider(dt) {
   if (!ctl) P.crash -= dt;
   // The stick steers in proportion to how far it is pushed (gentle near the middle, full at
   // the edge); keys are all or nothing. Either way the turn eases in and out instead of snapping.
-  const want = !ctl ? 0 : keys.analog
-    ? -Math.sign(keys.ax) * Math.abs(keys.ax) ** 1.5
-    : (keys.left ? 1 : 0) - (keys.right ? 1 : 0);
-  P.steer = damp(P.steer || 0, want, keys.analog ? 9 : 14, dt);
+  // On the ground the stick points where to ride: push left and the bike turns to face left of
+  // where it was heading, then rides straight that way (it does not keep circling). The heading it
+  // turns from is fixed while the thumb is off the "up" direction, so the camera swinging round
+  // behind the bike doesn't move the goal. Pulling the stick straight back brakes.
+  let want = 0, gas = 0, brake = 0;
+  const mag = Math.hypot(keys.ax, keys.ay);
+  if (!ctl) {
+    P.refYaw = null;
+  } else if (keys.analog && P.grounded && mag > 0) {
+    const ang = Math.atan2(-keys.ax, -keys.ay); // 0 = up, + = left
+    if (Math.abs(ang) > 2.5) {
+      brake = mag;
+      P.refYaw = null;
+    } else {
+      if (P.refYaw == null || Math.abs(ang) < 0.3) P.refYaw = P.yaw; // follow while riding straight
+      let d = P.refYaw + ang - P.yaw;
+      d = Math.atan2(Math.sin(d), Math.cos(d));
+      want = clamp(d * 2.2, -1, 1);
+      gas = mag;
+    }
+  } else {
+    P.refYaw = null;
+    want = keys.analog
+      ? -Math.sign(keys.ax) * Math.abs(keys.ax) ** 1.5 // in the air: spin with the stick
+      : (keys.left ? 1 : 0) - (keys.right ? 1 : 0);
+    gas = !keys.analog && keys.up ? 1 : 0;
+    brake = !keys.analog && keys.down ? 1 : 0;
+  }
+  P.steer = damp(P.steer || 0, want, keys.analog ? 8 : 14, dt);
   const steer = P.steer;
-  const gas = keys.analog ? Math.max(0, -keys.ay) : keys.up ? 1 : 0;
-  const brake = keys.analog ? Math.max(0, keys.ay) : keys.down ? 1 : 0;
   const jumpNow = keys.jumpPressed;
   keys.jumpPressed = false;
 
@@ -673,7 +696,9 @@ function updateRider(dt) {
     P.speed -= 18 * Math.sin(ang) * dt; // hills push back, descents give speed
     P.speed -= P.speed * 0.5 * dt;
     P.speed = clamp(P.speed, -6, 44);
-    P.yaw += steer * 2.4 * clamp(P.speed / 7, -1, 1) * dt;
+    // a bike turns with its speed; pushing the stick sideways from a standstill still swings it round slowly
+    const turnable = gas > 0 ? Math.max(0.45, clamp(P.speed / 7, -1, 1)) : clamp(P.speed / 7, -1, 1);
+    P.yaw += steer * 2.4 * turnable * dt;
     P.x += Math.sin(P.yaw) * P.speed * dt;
     P.z += Math.cos(P.yaw) * P.speed * dt;
     collide();
