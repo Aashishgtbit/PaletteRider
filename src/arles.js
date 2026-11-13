@@ -28,6 +28,15 @@ export const MAP_SPAN = 470;
 const PITCH = 34; // one block + one street
 const HALF_BLOCK = 12.5;
 const SQUARE = { x: 0, z: -68 }; // centre of the open square the café stands on
+// The town has no wall. Past the last houses the cobbles fade into dark fields with cypress
+// trees, and main.js gently steers a rider who wanders out there back towards town (SOFT_EDGE).
+export const SOFT_EDGE = true;
+const TOWN_R = 204; // houses stand inside this
+const CAFE = { x: 0, z: -80 };
+const wrapC = (v) => v; // (the town once repeated for ever; these keep that code readable)
+const nearTo = (v) => v;
+// tables on the café terrace, relative to the café
+const TABLES = [[-4.6, 6.4], [-1.6, 6.2], [1.6, 6.5], [4.6, 6.3], [-3.1, 8.6], [0.1, 8.8], [3.3, 8.5]];
 
 const smoothRand = (seed) => () => {
   seed |= 0; seed = (seed + 0x6d2b79f5) | 0;
@@ -39,16 +48,19 @@ const rnd = smoothRand(1888);
 const any = (list) => list[Math.floor(rnd() * list.length)];
 
 // ---------- town plan ----------
-const cells = new Map(); // "i,j" -> houses standing in that block
+const cells = new Map(); // "i,j" -> houses (and market stalls) standing in that cell
+const blockKeys = new Set(); // cells that have a block of houses
 const houses = [];
 const blocks = [];
 const ramps = [];
+const stalls = []; // market stalls: { x, z, yaw (the way the counter faces), end (vendor stands at the end) }
+const zones = []; // stretches of street with a market along one side
 
 function planTown() {
   for (let i = -7; i <= 6; i++)
     for (let j = -7; j <= 6; j++) {
       const cx = (i + 0.5) * PITCH, cz = (j + 0.5) * PITCH;
-      if (Math.hypot(cx, cz) > 204) continue;
+      if (Math.hypot(cx, cz) > TOWN_R) continue;
       if (Math.hypot(cx - SQUARE.x, cz - SQUARE.z) < 30) continue; // the square
       const x0 = cx - HALF_BLOCK, x1 = cx + HALF_BLOCK, z0 = cz - HALF_BLOCK, z1 = cz + HALF_BLOCK;
       blocks.push({ x0, x1, z0, z1 });
@@ -61,6 +73,7 @@ function planTown() {
         : [[x0, sx, z0, sz], [sx, x1, z0, sz], [x0, sx, sz, z1], [sx, x1, sz, z1]];
       const list = lots.map(([a, b, c, d]) => ({ x0: a, x1: b, z0: c, z1: d, top: 7 + rnd() * 7 }));
       cells.set(`${i},${j}`, list);
+      blockKeys.add(`${i},${j}`);
       houses.push(...list);
     }
   // plank ramps in the middle of some streets
@@ -69,11 +82,48 @@ function planTown() {
     if (Math.hypot(x, z) > 190 || Math.hypot(x - SQUARE.x, z - SQUARE.z) < 52 || Math.hypot(x, z - 40) < 24) return;
     ramps.push({ x, z, alongX, peak: 2.1 + rnd() * 0.7 });
   };
-  for (let k = -6; k <= 6; k++)
+  for (let k = -7; k <= 6; k++)
     for (let m = -7; m <= 6; m++) {
       tryRamp(k * PITCH, (m + 0.5) * PITCH, false);
       tryRamp((m + 0.5) * PITCH, k * PITCH, true);
     }
+
+  // markets. Each stall is also a low obstacle, so the bike goes round it (or jumps it).
+  const addStall = (x, z, yaw, end) => {
+    x = wrapC(x); z = wrapC(z);
+    stalls.push({ x, z, yaw, end });
+    const alongZ = Math.abs(Math.sin(yaw)) > 0.5; // counter runs along z when it faces along x
+    const hx = alongZ ? 0.65 : 1.35, hz = alongZ ? 1.35 : 0.65;
+    const key = `${Math.floor(x / PITCH)},${Math.floor(z / PITCH)}`;
+    if (!cells.has(key)) cells.set(key, []);
+    cells.get(key).push({ x0: x - hx, x1: x + hx, z0: z - hz, z1: z + hz, top: 2.4 });
+  };
+  // the big market on the square: two rows facing each other either side of the way to the café
+  for (const sx of [-1, 1])
+    for (let n = 0; n < 4; n++) {
+      addStall(sx * (13.2 + 3.4 * n), -56, 0, false);
+      addStall(sx * (13.2 + 3.4 * n), -44, Math.PI, false);
+    }
+  // smaller markets along one side of a street, here and there through the town
+  const used = new Set();
+  for (let tries = 0, made = 0; tries < 400 && made < 11; tries++) {
+    const alongX = rnd() < 0.5, side = rnd() < 0.5 ? -1 : 1;
+    const k = Math.floor(rnd() * 14) - 7, m = Math.floor(rnd() * 14) - 7;
+    const ci = ((((side > 0 ? k : k - 1) + 7) % 14) + 14) % 14 - 7;
+    const key = alongX ? `${m},${ci}` : `${ci},${m}`;
+    if (!blockKeys.has(key) || used.has(key)) continue;
+    const mid = (m + 0.5) * PITCH, cx = alongX ? mid : k * PITCH, cz = alongX ? k * PITCH : mid;
+    if (Math.hypot(cx, cz) > 175 || Math.hypot(cx - SQUARE.x, cz - SQUARE.z) < 62 || Math.hypot(cx, cz - 40) < 30) continue;
+    if (ramps.some((r) => Math.hypot(wrapC(r.x - cx), wrapC(r.z - cz)) < 14)) continue;
+    used.add(key);
+    made++;
+    const line = k * PITCH + side * 3.55;
+    for (const off of [-3.4, 0, 3.4]) {
+      if (alongX) addStall(mid + off, line, side > 0 ? Math.PI : 0, true);
+      else addStall(line, mid + off, side > 0 ? -Math.PI / 2 : Math.PI / 2, true);
+    }
+    zones.push({ alongX, k, side, a0: mid - 6.5, a1: mid + 6.5 });
+  }
 }
 planTown();
 
@@ -81,15 +131,24 @@ const RAMP_LEN = 6, RAMP_W = 2.4;
 export function heightAt(x, z) {
   let h = 0;
   for (const r of ramps) {
-    const a = Math.abs(r.alongX ? x - r.x : z - r.z), c = Math.abs(r.alongX ? z - r.z : x - r.x);
+    const dx = Math.abs(wrapC(x - r.x)), dz = Math.abs(wrapC(z - r.z));
+    const a = r.alongX ? dx : dz, c = r.alongX ? dz : dx;
     if (a < RAMP_LEN && c < RAMP_W) h += r.peak * (1 - a / RAMP_LEN) * Math.min(1, (RAMP_W - c) * 1.5);
   }
   return h;
 }
-const cellOf = (x, z) => cells.get(`${Math.floor(x / PITCH)},${Math.floor(z / PITCH)}`);
+const cellOf = (x, z) => cells.get(`${Math.floor(wrapC(x) / PITCH)},${Math.floor(wrapC(z) / PITCH)}`);
 
 // Keep the rider out of walls: glancing hits slide along the wall, head-on hits bounce.
 export function pushOut(P) {
+  // work in the base copy of the town, then put the rider back where they really are
+  const sx = P.x - wrapC(P.x), sz = P.z - wrapC(P.z);
+  P.x -= sx; P.z -= sz;
+  const hit = pushLocal(P);
+  P.x += sx; P.z += sz;
+  return hit;
+}
+function pushLocal(P) {
   const list = cellOf(P.x, P.z);
   if (!list) return 0;
   const m = 0.5;
@@ -113,7 +172,7 @@ export function pushOut(P) {
     const into = -(fx * nx + fz * nz);
     if (into <= 0) return 0;
     const hit = Math.abs(P.speed) * into;
-    if (into > 0.85) P.speed *= -0.3;
+    if (into > 0.85) P.speed *= 0.2; // head-on: the bike stops against the wall
     else {
       const tx = fx + nx * into, tz = fz + nz * into;
       let turn = Math.atan2(tx * dir, tz * dir) - P.yaw;
@@ -128,6 +187,7 @@ export function pushOut(P) {
 
 export function blocked(x, y, z) {
   const list = cellOf(x, z);
+  x = wrapC(x); z = wrapC(z);
   if (list) for (const b of list) if (x > b.x0 - 0.6 && x < b.x1 + 0.6 && z > b.z0 - 0.6 && z < b.z1 + 0.6 && y < b.top + 3) return true;
   return false;
 }
@@ -139,10 +199,10 @@ export function starSpot() {
     const p = ramps[Math.floor(Math.random() * ramps.length)];
     return { x: p.x, z: p.z, y: p.peak + 2.6, high: true };
   }
-  const k = Math.floor(Math.random() * 13) - 6;
-  const along = (Math.random() * 2 - 1) * 195, across = (Math.random() * 2 - 1) * 3;
+  const k = Math.floor(Math.random() * 14) - 7;
+  const along = (Math.random() * 2 - 1) * 195, across = (Math.random() * 2 - 1) * 2.4;
   const p = Math.random() < 0.5 ? { x: k * PITCH + across, z: along } : { x: along, z: k * PITCH + across };
-  if (Math.hypot(p.x, p.z) > 200) return null;
+  if (Math.hypot(p.x, p.z) > 198) return null;
   const high = r > 0.78; // needs a jump
   return { ...p, y: heightAt(p.x, p.z) + (high ? 4.2 : 1.2), high };
 }
@@ -388,16 +448,12 @@ function buildTown(scene) {
   });
   scene.add(orbs, pools);
 
-  // the town wall
-  const wall = new THREE.Mesh(new THREE.CylinderGeometry(228, 228, 16, 72, 1, true), new THREE.MeshStandardMaterial({ color: 0x1a2350, side: THREE.BackSide, roughness: 1 }));
-  wall.position.y = 8;
-  scene.add(wall);
   return fronts;
 }
 
 function buildCafe(scene, fronts) {
   const g = new THREE.Group();
-  g.position.set(MON.x, 0, MON.z);
+  g.position.set(CAFE.x, 0, CAFE.z);
   const mesh = (geo, mat, x, y, z) => {
     const m = new THREE.Mesh(geo, mat);
     m.position.set(x, y, z);
@@ -435,7 +491,7 @@ function buildCafe(scene, fronts) {
   mesh(new THREE.BoxGeometry(13, 0.1, 6.2), new THREE.MeshStandardMaterial({ map: floorPaint, emissive: 0x3a1c04, roughness: 0.9 }), 0, 0.05, 7.1);
   const topGeo = new THREE.CylinderGeometry(0.55, 0.55, 0.06, 16), legGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.75, 6);
   const seatGeo = new THREE.BoxGeometry(0.42, 0.06, 0.42), backGeo = new THREE.BoxGeometry(0.42, 0.5, 0.05);
-  for (const [x, z] of [[-4.6, 6.4], [-1.6, 6.2], [1.6, 6.5], [4.6, 6.3], [-3.1, 8.6], [0.1, 8.8], [3.3, 8.5]]) {
+  for (const [x, z] of TABLES) {
     mesh(topGeo, cream, x, 0.78, z);
     mesh(legGeo, wood, x, 0.4, z);
     for (const side of [-1, 1]) {
@@ -460,9 +516,7 @@ function buildCafe(scene, fronts) {
   // the big gas lantern on its bracket
   mesh(new THREE.BoxGeometry(0.08, 0.08, 1.8), blue, -1.2, 4.0, 4.9);
   mesh(new THREE.SphereGeometry(0.42, 14, 10), new THREE.MeshBasicMaterial({ color: 0xfff3b0 }), -1.2, 3.55, 5.7);
-  const glow = new THREE.PointLight(0xffc24a, 60, 60, 1.5);
-  glow.position.set(0, 3.2, 8);
-  g.add(glow);
+  const glow = new THREE.PointLight(0xffc24a, 60, 60, 1.5); // one light, kept at the nearest café by buildWorld
 
   // street lamps round the square: one lights for every star delivered
   const lamps = [];
@@ -492,13 +546,161 @@ function buildCafe(scene, fronts) {
     0, 162, 0
   );
   scene.add(g);
-  return { lamps, beam };
+  return { lamps, beam, glow };
+}
+
+// ---------- markets ----------
+// Striped stalls with crates of fruit and a lantern each, all merged into two meshes.
+function buildMarket(tile) {
+  if (!stalls.length) return;
+  const parts = [], glows = [];
+  const AWNING = [[0xc8402c, 0xf0e6c8], [0x2c6a9c, 0xf0e6c8], [0xd9a020, 0x7a3b22], [0x3a7a4a, 0xf0e6c8], [0x8a3a6a, 0xf0d8a0]];
+  const GOODS = [0xe8822a, 0xd9c22a, 0xc8302a, 0x6aa83a, 0x8a4a9a, 0xe8d8b0, 0xd95a7a];
+  for (const s of stalls) {
+    const put = (list, geo, hex, x, y, z, rx = 0) => {
+      if (rx) geo.rotateX(rx);
+      geo.translate(x, y, z).rotateY(s.yaw).translate(s.x, 0, s.z);
+      list.push(tint(geo, hex));
+    };
+    const [c1, c2] = any(AWNING);
+    put(parts, new THREE.BoxGeometry(2.6, 0.85, 1.1), 0x8a5a2c, 0, 0.425, 0); // counter
+    put(parts, new THREE.BoxGeometry(2.64, 0.5, 0.05), c1, 0, 0.58, 0.57); // cloth hanging down its front
+    for (const cx of [-0.85, 0, 0.85]) {
+      put(parts, new THREE.BoxGeometry(0.72, 0.16, 0.8), 0x6a4420, cx, 0.93, 0); // crate
+      const fruit = any(GOODS);
+      for (let i = 0; i < 6; i++) put(parts, new THREE.SphereGeometry(0.13, 6, 5), fruit, cx + (rnd() - 0.5) * 0.46, 1.07 + rnd() * 0.08, (rnd() - 0.5) * 0.54);
+    }
+    for (const px of [-1.35, 1.35]) for (const pz of [-0.75, 0.75]) put(parts, new THREE.CylinderGeometry(0.04, 0.04, 2.3, 5), 0x3a2a1c, px, 1.15, pz);
+    for (let i = 0; i < 6; i++) put(parts, new THREE.BoxGeometry(0.5, 0.05, 1.9), i % 2 ? c2 : c1, -1.25 + 0.5 * i, 2.35, 0, 0.2); // striped awning
+    put(glows, new THREE.SphereGeometry(0.17, 8, 6), 0xffe2a0, 0, 1.95, 0.72); // lantern
+  }
+  tile.add(new THREE.Mesh(mergeGeometries(parts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, emissive: 0x2a2014 })));
+  tile.add(new THREE.Mesh(mergeGeometries(glows), new THREE.MeshBasicMaterial({ vertexColors: true })));
+  // a pool of warm light on the cobbles in front of each stall
+  const poolTex = new THREE.CanvasTexture(spotTexture([[0, 'rgba(255,205,110,0.5)'], [0.5, 'rgba(255,175,70,0.18)'], [1, 'rgba(255,170,60,0)']]));
+  const poolGeo = new THREE.CircleGeometry(3.4, 18);
+  poolGeo.rotateX(-Math.PI / 2);
+  const pools = new THREE.InstancedMesh(poolGeo, new THREE.MeshBasicMaterial({ map: poolTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }), stalls.length);
+  const dummy = new THREE.Object3D();
+  stalls.forEach((s, i) => {
+    dummy.position.set(s.x + Math.sin(s.yaw) * 1.1, 0.06, s.z + Math.cos(s.yaw) * 1.1);
+    dummy.updateMatrix();
+    pools.setMatrixAt(i, dummy.matrix);
+  });
+  tile.add(pools);
+}
+
+// ---------- the fields beyond the town ----------
+// Where the streets stop, the cobbles melt into dark farmland dotted with cypresses and a few
+// haystacks, so the town has an edge without having a wall.
+function buildFields(scene) {
+  const fieldPaint = strokeTexture('#10222a', ['#17323a', '#0c1a24', '#1f3f3a', '#243a52', '#2c4a3a', '#0a141e'], { len: 46, wid: 9, ang: 0.3, spread: 0.5, curve: 10 }, 900);
+  fieldPaint.repeat.set(40, 40);
+  const field = new THREE.Mesh(new THREE.PlaneGeometry(2400, 2400), new THREE.MeshStandardMaterial({ map: fieldPaint, roughness: 1 }));
+  field.rotation.x = -Math.PI / 2;
+  field.position.y = 0.02; // lies over the cobbles; the hole in the middle is the town
+  // cut the town out of it with a soft-edged alpha map
+  const S = 512, c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d');
+  g.fillStyle = '#fff';
+  g.fillRect(0, 0, S, S);
+  const r0 = (208 / 1200) * (S / 2), r1 = (236 / 1200) * (S / 2);
+  const hole = g.createRadialGradient(S / 2, S / 2, r0, S / 2, S / 2, r1);
+  hole.addColorStop(0, '#000'); hole.addColorStop(1, '#fff');
+  g.fillStyle = hole;
+  g.beginPath(); g.arc(S / 2, S / 2, r1, 0, Math.PI * 2); g.fill();
+  field.material.alphaMap = new THREE.CanvasTexture(c);
+  field.material.transparent = true;
+  field.material.depthWrite = false;
+  field.renderOrder = 1;
+  scene.add(field);
+
+  const trees = [], stacks = [];
+  const GREENS = [0x0f2a22, 0x143a2a, 0x0c2030, 0x1a4030];
+  for (let i = 0; i < 150; i++) {
+    const a = rnd() * Math.PI * 2, r = 232 + rnd() * rnd() * 190;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    if (rnd() < 0.82) {
+      // a cypress: a tall, slightly leaning flame of dark green
+      const h = 9 + rnd() * 9, w = 1.3 + rnd() * 0.9, hex = any(GREENS);
+      const lean = (rnd() - 0.5) * 0.12;
+      trees.push(tint(new THREE.ConeGeometry(w, h, 7).rotateZ(lean).translate(x, h / 2, z), hex));
+      trees.push(tint(new THREE.ConeGeometry(w * 0.72, h * 0.62, 7).rotateZ(-lean).translate(x + 0.3, h * 0.42, z + 0.2), hex));
+    } else {
+      const h = 2.2 + rnd() * 1.2;
+      stacks.push(tint(new THREE.ConeGeometry(1.8 + rnd() * 0.8, h, 9).translate(x, h / 2, z), any([0x8a7a2c, 0x9a8430, 0x6a5c20])));
+    }
+  }
+  const leafPaint = strokeTexture('#9aa8a0', ['#c8d8c8', '#6a8078', '#a8c0a0', '#506860'], { len: 40, wid: 8, ang: Math.PI / 2, spread: 0.35, curve: 12 }, 500);
+  leafPaint.repeat.set(2, 3);
+  scene.add(new THREE.Mesh(mergeGeometries(trees), new THREE.MeshStandardMaterial({ map: leafPaint, vertexColors: true, flatShading: true, roughness: 1, emissive: 0x04100c })));
+  if (stacks.length) scene.add(new THREE.Mesh(mergeGeometries(stacks), new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, emissive: 0x1a1404 })));
 }
 
 // ---------- townsfolk ----------
+// Everyone in town is drawn from the same few jointed parts: people strolling the streets,
+// guests sitting at the café tables, stallholders and shoppers at the markets, and little
+// groups stopped for a chat. Whoever is "speaking" in a group waves an arm and the others nod.
 function buildFolk(scene) {
-  const N = 60;
-  const dummy = new THREE.Object3D(), col = new THREE.Color();
+  const COAT = ['#22264a', '#3a2a22', '#5a2630', '#2f4a3a', '#d9c26a', '#e8e2d0', '#7a3b22', '#35407a', '#8a3a5a', '#3a6a7a'];
+  const SKIN = ['#f1c9a5', '#e0ac69', '#c68642', '#d9a27a'];
+  const figs = [], anchors = []; // anchors: places where people are talking (for the murmur)
+  let groupNo = 0;
+  const person = (o) => {
+    figs.push({ h: 0.9 + rnd() * 0.18, ph: rnd() * 6.28, hop: 0, walk: rnd() * 6.28, g: 0, gi: 0, gn: 1, ...o });
+    return figs[figs.length - 1];
+  };
+  const group = (list, x, z) => {
+    groupNo++;
+    list.forEach((f, i) => { f.g = groupNo; f.gi = i; f.gn = list.length; });
+    anchors.push({ x, z });
+  };
+
+  // strolling
+  for (let i = 0; i < 70; i++) {
+    const k = Math.floor(rnd() * 14) - 7, side = rnd() < 0.5 ? -1 : 1;
+    person({ mode: 'walk', alongX: rnd() < 0.5, k, side, off: 2.9 + rnd() * 0.8, s: (rnd() * 2 - 1) * 185, v: (rnd() < 0.5 ? -1 : 1) * (0.8 + rnd() * 0.9) });
+  }
+  // guests at the café tables, facing each other across the table
+  TABLES.forEach(([tx, tz]) => {
+    const seated = [];
+    for (const side of [-1, 1]) {
+      if (rnd() < 0.14) continue; // the odd empty chair
+      seated.push(person({ mode: 'sit', x: CAFE.x + tx + side * 0.85, z: CAFE.z + tz, yaw: side < 0 ? Math.PI / 2 : -Math.PI / 2 }));
+    }
+    if (seated.length) group(seated, CAFE.x + tx, CAFE.z + tz);
+  });
+  // a stallholder at every stall, and usually a shopper or two
+  for (const s of stalls) {
+    const at = (lx, lz) => ({ x: s.x + lx * Math.cos(s.yaw) + lz * Math.sin(s.yaw), z: s.z - lx * Math.sin(s.yaw) + lz * Math.cos(s.yaw) });
+    const crowd = [person({ mode: 'stand', keeper: true, ...(s.end ? at(1.75, 0.1) : at(0, -0.95)), yaw: s.yaw })];
+    const n = rnd() < 0.25 ? 0 : rnd() < 0.6 ? 1 : 2;
+    for (let i = 0; i < n; i++) crowd.push(person({ mode: 'stand', ...at((i ? 0.65 : -0.45) + (rnd() - 0.5) * 0.3, 1.25 + rnd() * 0.35), yaw: s.yaw + Math.PI + (rnd() - 0.5) * 0.5 }));
+    group(crowd, s.x, s.z);
+  }
+  // knots of two or three people stopped to talk: along the streets and on the square
+  const circle = (x, z) => {
+    const n = rnd() < 0.55 ? 2 : 3, turn = rnd() * 6.28, list = [];
+    for (let i = 0; i < n; i++) {
+      const a = turn + (i / n) * 6.28;
+      list.push(person({ mode: 'stand', x: x + Math.sin(a) * 0.6, z: z + Math.cos(a) * 0.6, yaw: a + Math.PI }));
+    }
+    group(list, x, z);
+  };
+  for (let tries = 0, made = 0; tries < 300 && made < 30; tries++) {
+    const alongX = rnd() < 0.5, k = Math.floor(rnd() * 14) - 7, side = rnd() < 0.5 ? -1 : 1, s = (rnd() * 2 - 1) * 190;
+    if (Math.abs(s - Math.round(s / PITCH) * PITCH) < 7) continue; // not in the middle of a crossing
+    const x = alongX ? s : k * PITCH + side * 3.4, z = alongX ? k * PITCH + side * 3.4 : s;
+    if (Math.hypot(x, z) > 192 || Math.hypot(x - SQUARE.x, z - SQUARE.z) < 44 || Math.hypot(x, z - 40) < 12) continue;
+    if (zones.some((m) => m.alongX === alongX && m.k === k && s > m.a0 - 3 && s < m.a1 + 3)) continue;
+    if (ramps.some((r) => Math.hypot(wrapC(r.x - x), wrapC(r.z - z)) < 9)) continue;
+    circle(x, z);
+    made++;
+  }
+  for (const [x, z] of [[-9, -63], [10, -61], [-22, -67], [23, -65], [6, -50], [-7, -37], [15, -36], [-27, -50], [27, -51]]) circle(x, z);
+
+  const N = figs.length, SEATED = figs.filter((f) => f.mode === 'sit').length;
   const geo = {
     torso: new THREE.CapsuleGeometry(0.15, 0.3, 4, 12).scale(1.3, 1, 0.85).translate(0, 1.2, 0),
     head: new THREE.SphereGeometry(0.115, 14, 12).scale(0.92, 1.12, 1).translate(0, 1.64, 0),
@@ -513,64 +715,109 @@ function buildFolk(scene) {
     return m;
   };
   const torsos = inst(geo.torso, N), heads = inst(geo.head, N), hats = inst(geo.hat, N), arms = inst(geo.arm, N * 2), legs = inst(geo.leg, N * 2);
-  const COAT = ['#22264a', '#3a2a22', '#5a2630', '#2f4a3a', '#d9c26a', '#e8e2d0', '#7a3b22', '#35407a'];
-  const SKIN = ['#f1c9a5', '#e0ac69', '#c68642', '#d9a27a'];
-  const folk = [];
-  for (let i = 0; i < N; i++) {
-    folk.push({
-      alongX: rnd() < 0.5,
-      line: (Math.floor(rnd() * 13) - 6) * PITCH + (rnd() < 0.5 ? -1 : 1) * (2.9 + rnd() * 0.8),
-      s: (rnd() * 2 - 1) * 185,
-      v: (rnd() < 0.5 ? -1 : 1) * (0.8 + rnd() * 0.9),
-      h: 0.9 + rnd() * 0.18,
-      walk: rnd() * 6.28,
-      hop: 0,
-    });
-    const coat = any(COAT);
+  const shins = inst(geo.leg, Math.max(1, SEATED * 2)); // lower legs of the people sitting down
+  const col = new THREE.Color();
+  let seat = 0;
+  figs.forEach((f, i) => {
+    const coat = f.keeper ? any(['#e8e2d0', '#d9c26a', '#7a3b22']) : any(COAT), trousers = any(['#1c1c28', '#2a2230', '#3a3040']);
     torsos.setColorAt(i, col.set(coat));
     heads.setColorAt(i, col.set(any(SKIN)));
-    hats.setColorAt(i, col.set(any(['#15151c', '#3a2a22', '#d9c26a'])));
+    hats.setColorAt(i, col.set(any(['#15151c', '#3a2a22', '#d9c26a', '#e8e2d0'])));
     for (const k of [0, 1]) {
       arms.setColorAt(i * 2 + k, col.set(coat));
-      legs.setColorAt(i * 2 + k, col.set(any(['#1c1c28', '#2a2230'])));
+      legs.setColorAt(i * 2 + k, col.set(trousers));
     }
-  }
-  const base = new THREE.Matrix4(), local = new THREE.Matrix4(), world = new THREE.Matrix4();
-  const limb = (mesh, idx, px, py, rx) => {
-    local.makeRotationX(rx).setPosition(px, py, 0);
+    if (f.mode === 'sit') {
+      f.seat = seat++;
+      for (const k of [0, 1]) shins.setColorAt(f.seat * 2 + k, col.set(trousers));
+    }
+  });
+
+  const dummy = new THREE.Object3D();
+  const base = new THREE.Matrix4(), local = new THREE.Matrix4(), world = new THREE.Matrix4(), squash = new THREE.Vector3();
+  const limb = (mesh, idx, px, py, pz, rx, sy = 1) => {
+    local.makeRotationX(rx);
+    if (sy !== 1) local.scale(squash.set(1, sy, 1));
+    local.setPosition(px, py, pz);
     mesh.setMatrixAt(idx, world.multiplyMatrices(base, local));
   };
-  return (dt, P) => {
+  const nod = (mesh, idx, rx) => { // tip the head about the neck
+    local.makeRotationX(rx).setPosition(0, 1.5 - 1.5 * Math.cos(rx), 1.5 * Math.sin(rx));
+    mesh.setMatrixAt(idx, world.multiplyMatrices(base, local));
+  };
+
+  return (t, dt, P, ref) => {
     let hopped = false;
     for (let i = 0; i < N; i++) {
-      const f = folk[i];
-      f.s += f.v * dt;
-      let x = f.alongX ? f.s : f.line, z = f.alongX ? f.line : f.s;
-      if (Math.hypot(x, z) > 198 || Math.hypot(x - MON.x, z - MON.z) < 20) {
-        f.v = -f.v; // turn back at the town wall and at the café
-        f.s += f.v * dt * 2;
-        x = f.alongX ? f.s : f.line; z = f.alongX ? f.line : f.s;
+      const f = figs[i];
+      let x, z, yaw, y = 0;
+      if (f.mode === 'walk') {
+        f.s += f.v * dt;
+        let off = f.off;
+        for (const m of zones) if (m.alongX === f.alongX && m.k === f.k && m.side === f.side && f.s > m.a0 && f.s < m.a1) off = 1.5; // step round the stalls
+        f.offNow = f.offNow === undefined ? off : f.offNow + (off - f.offNow) * Math.min(1, dt * 3);
+        const line = f.k * PITCH + f.side * f.offNow;
+        x = f.alongX ? f.s : line; z = f.alongX ? line : f.s;
+        if (Math.hypot(x, z) > 198 || Math.hypot(x - CAFE.x, z - CAFE.z - 6) < 13) {
+          f.v = -f.v; // turn back where the town ends and at the café terrace
+          f.s += f.v * dt * 2;
+          x = f.alongX ? f.s : line; z = f.alongX ? line : f.s;
+        }
+        yaw = f.alongX ? (f.v > 0 ? Math.PI / 2 : -Math.PI / 2) : f.v > 0 ? 0 : Math.PI;
+        f.walk += Math.abs(f.v) * dt * 3.4;
+        y = Math.abs(Math.sin(f.walk)) * 0.03;
+      } else {
+        x = f.x; z = f.z; yaw = f.yaw;
       }
+      x = nearTo(x, ref.x); z = nearTo(z, ref.z);
+      const sitting = f.mode === 'sit';
       if (f.hop > 0) f.hop -= dt;
-      else if (P && Math.abs(P.speed) > 3 && P.y < 3 && Math.hypot(x - P.x, z - P.z) < 3.2) { f.hop = 0.55; hopped = true; }
+      else if (!sitting && !f.keeper && P && Math.abs(P.speed) > 3 && P.y < 3 && Math.hypot(x - P.x, z - P.z) < 3.2) { f.hop = 0.55; hopped = true; }
       const hopping = f.hop > 0;
-      f.walk += Math.abs(f.v) * dt * 3.4;
-      const swing = Math.sin(f.walk) * 0.5;
-      dummy.position.set(x, Math.abs(Math.sin(f.walk)) * 0.03 + (hopping ? Math.sin((f.hop / 0.55) * Math.PI) * 1.1 : 0), z);
-      dummy.rotation.set(0, f.alongX ? (f.v > 0 ? Math.PI / 2 : -Math.PI / 2) : f.v > 0 ? 0 : Math.PI, 0);
+      if (hopping) y += Math.sin((f.hop / 0.55) * Math.PI) * 1.1;
+      const speaking = f.gn > 1 && Math.floor(t / 2.6 + f.g * 0.37) % f.gn === f.gi;
+      if (f.mode === 'stand') yaw += Math.sin(t * 0.8 + f.ph) * 0.1; // shifting about
+      if (sitting) y = 0.55 - 0.9 * f.h;
+      dummy.position.set(x, y, z);
+      dummy.rotation.set(0, yaw, 0);
       dummy.scale.setScalar(f.h);
       dummy.updateMatrix();
       base.copy(dummy.matrix);
       torsos.setMatrixAt(i, base);
-      heads.setMatrixAt(i, base);
-      hats.setMatrixAt(i, base);
-      limb(legs, i * 2, -0.085, 0.9, hopping ? -0.5 : swing);
-      limb(legs, i * 2 + 1, 0.085, 0.9, hopping ? 0.3 : -swing);
-      limb(arms, i * 2, -0.245, 1.44, hopping ? -2.7 : -swing * 0.8);
-      limb(arms, i * 2 + 1, 0.245, 1.44, hopping ? -2.7 : swing * 0.8);
+      const tip = f.mode === 'walk' || hopping ? 0 : speaking ? Math.sin(t * 5 + f.ph) * 0.07 : 0.06 + Math.sin(t * 2.2 + f.ph) * 0.07;
+      nod(heads, i, tip);
+      nod(hats, i, tip);
+      const wave = Math.sin(t * 5.5 + f.ph);
+      if (hopping) {
+        limb(legs, i * 2, -0.085, 0.9, 0, -0.5);
+        limb(legs, i * 2 + 1, 0.085, 0.9, 0, 0.3);
+        limb(arms, i * 2, -0.245, 1.44, 0, -2.7);
+        limb(arms, i * 2 + 1, 0.245, 1.44, 0, -2.7);
+      } else if (sitting) {
+        limb(legs, i * 2, -0.085, 0.9, 0, -Math.PI / 2, 0.55); // thighs along the seat
+        limb(legs, i * 2 + 1, 0.085, 0.9, 0, -Math.PI / 2, 0.55);
+        limb(shins, f.seat * 2, -0.085, 0.9, 0.45, 0, 0.56);
+        limb(shins, f.seat * 2 + 1, 0.085, 0.9, 0.45, 0, 0.56);
+        limb(arms, i * 2, -0.245, 1.44, 0, speaking ? -1.5 - wave * 0.35 : -1.05); // hands on the table
+        limb(arms, i * 2 + 1, 0.245, 1.44, 0, -1.05);
+      } else if (f.mode === 'stand') {
+        limb(legs, i * 2, -0.085, 0.9, 0, 0);
+        limb(legs, i * 2 + 1, 0.085, 0.9, 0, 0);
+        limb(arms, i * 2, -0.245, 1.44, 0, speaking ? -1.0 - wave * 0.5 : -0.12);
+        limb(arms, i * 2 + 1, 0.245, 1.44, 0, speaking ? -0.5 + wave * 0.3 : f.keeper ? -0.9 : -0.1);
+      } else {
+        const swing = Math.sin(f.walk) * 0.5;
+        limb(legs, i * 2, -0.085, 0.9, 0, swing);
+        limb(legs, i * 2 + 1, 0.085, 0.9, 0, -swing);
+        limb(arms, i * 2, -0.245, 1.44, 0, -swing * 0.8);
+        limb(arms, i * 2 + 1, 0.245, 1.44, 0, swing * 0.8);
+      }
     }
-    for (const m of [torsos, heads, hats, arms, legs]) m.instanceMatrix.needsUpdate = true;
-    return hopped;
+    for (const m of [torsos, heads, hats, arms, legs, shins]) m.instanceMatrix.needsUpdate = true;
+    // how much chatter the rider can hear: loudest right beside a busy spot
+    let murmur = 0;
+    if (P) for (const a of anchors) murmur += Math.max(0, 1 - Math.hypot(wrapC(a.x - P.x), wrapC(a.z - P.z)) / 16) ** 2;
+    return { hopped, murmur: Math.min(1, murmur * 0.45) };
   };
 }
 
@@ -646,10 +893,13 @@ function buildSky(scene) {
 // ---------- map ----------
 export function drawMap(g, S) {
   const k = S / MAP_SPAN, c = S / 2;
-  g.save();
-  g.beginPath(); g.arc(c, c, 228 * k, 0, Math.PI * 2); g.clip();
-  g.fillStyle = '#141a40';
+  // dark fields all round, the town in the middle with a soft rim
+  g.fillStyle = '#0b1a26';
   g.fillRect(0, 0, S, S);
+  const rim = g.createRadialGradient(c, c, 205 * k, c, c, 232 * k);
+  rim.addColorStop(0, '#141a40'); rim.addColorStop(1, 'rgba(20,26,64,0)');
+  g.fillStyle = rim;
+  g.beginPath(); g.arc(c, c, 232 * k, 0, Math.PI * 2); g.fill();
   g.fillStyle = '#3a4c9a';
   for (const b of houses) g.fillRect(c + b.x0 * k + 0.5, c + b.z0 * k + 0.5, (b.x1 - b.x0) * k - 1, (b.z1 - b.z0) * k - 1);
   g.fillStyle = '#d9a85e';
@@ -657,17 +907,15 @@ export function drawMap(g, S) {
     const w = (r.alongX ? RAMP_LEN : RAMP_W) * k, h = (r.alongX ? RAMP_W : RAMP_LEN) * k;
     g.fillRect(c + r.x * k - w, c + r.z * k - h, w * 2, h * 2);
   }
-  const mx = c + MON.x * k, mz = c + MON.z * k;
+  g.fillStyle = '#e8763a'; // market stalls
+  for (const s of stalls) g.fillRect(c + s.x * k - 2.2, c + s.z * k - 2.2, 4.4, 4.4);
+  const mx = c + CAFE.x * k, mz = c + CAFE.z * k;
   g.fillStyle = 'rgba(255,210,74,0.28)';
   g.beginPath(); g.arc(mx, mz, 26 * k, 0, Math.PI * 2); g.fill();
   g.fillStyle = '#ffd24a';
   g.fillRect(mx - 8 * k, mz - 6 * k, 16 * k, 12 * k); // the café
   g.fillStyle = '#f7a52c';
   g.fillRect(mx - 9 * k, mz + 6 * k, 18 * k, 6 * k); // its awning
-  g.restore();
-  g.strokeStyle = '#c8d4ff';
-  g.lineWidth = Math.max(2, S / 170);
-  g.beginPath(); g.arc(c, c, 228 * k, 0, Math.PI * 2); g.stroke();
 }
 
 export function buildWorld(scene) {
@@ -679,6 +927,10 @@ export function buildWorld(scene) {
 
   const fronts = buildTown(scene);
   const cafe = buildCafe(scene, fronts);
+  buildMarket(scene);
+  buildFields(scene);
+  cafe.glow.position.set(CAFE.x, 3.2, CAFE.z + 8);
+  scene.add(cafe.glow);
   const folk = buildFolk(scene);
   const sky = buildSky(scene);
 
@@ -692,6 +944,8 @@ export function buildWorld(scene) {
       shown = Math.min(SKY_STARS, START_STARS + count);
     },
     update(t, dt, camera, dawn, P) {
+      const ref = P || camera.position;
+      const people = folk(t, dt, P, ref);
       sky.group.position.copy(camera.position);
       sky.uniforms.uDawn.value = dawn;
       sky.stars.forEach((s, i) => {
@@ -703,7 +957,10 @@ export function buildWorld(scene) {
       hemi.intensity = 1.9 + dawn * 1.4;
       cafe.beam.material.opacity = 0.1 + 0.04 * Math.sin(t * 2);
       for (let i = 0; i < lit; i++) cafe.lamps[i].scale.setScalar(1 + Math.sin(t * 8 + i) * 0.12);
-      return { hop: folk(dt, P) };
+      return { hop: people.hopped, murmur: people.murmur };
     },
   };
 }
+
+// for tests and debugging
+export { stalls, zones };

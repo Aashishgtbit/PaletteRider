@@ -9,6 +9,7 @@ import * as valley from './world.js';
 import * as city from './city.js';
 import * as arles from './arles.js';
 import { TIP_URL, TIP_LABEL } from './support.js';
+import { createNet } from './net.js';
 
 // The painted city is the default world; add ?world=valley to ride the Himalayan valley.
 // Chapter 1 is the Klee city, chapter 2 is Van Gogh's Arles (?chapter=2).
@@ -24,6 +25,12 @@ try {
   }
 } catch { /* private mode */ }
 const { buildWorld, heightAt, MON, HILL_H, WORLD_R, INFO } = W;
+// A world with no edge repeats every WRAP metres. The rider's own position just keeps growing;
+// everything else (stars, the goal, other riders) is moved to whichever copy is nearest the rider.
+const WRAP = W.WRAP || 0;
+const nearest = (v, ref) => (WRAP ? v + WRAP * Math.round((ref - v) / WRAP) : v);
+const MON_HOME = { x: MON.x, z: MON.z };
+const ROOM = W === valley ? 'valley' : 'ch' + CHAPTER; // riders only see others in the same painting
 
 const TAU = Math.PI * 2;
 const NIGHT_SECONDS = W.INFO.seconds ?? 180;
@@ -58,7 +65,9 @@ addEventListener('resize', () => {
 });
 
 // ---------- the rider ----------
-function buildBike() {
+// colours: { bike, dress } as hues 0-360 (each player has their own); lamp: only the player's own bike lights the road
+function buildBike({ bike: bikeHue = 42, dress: dressHue = 215, lamp: withLamp = true } = {}) {
+  const hsl = (h, s, l) => new THREE.Color().setHSL((((h % 360) + 360) % 360) / 360, s, l);
   const root = new THREE.Group(); // position + heading
   const pitchG = new THREE.Group(); // flips turn around the middle of the bike
   pitchG.position.y = 0.6;
@@ -67,7 +76,7 @@ function buildBike() {
   root.add(pitchG);
   pitchG.add(rollG);
 
-  const frameMat = new THREE.MeshStandardMaterial({ color: 0xd9a441, metalness: 0.6, roughness: 0.35 });
+  const frameMat = new THREE.MeshStandardMaterial({ color: hsl(bikeHue, 0.72, 0.52), metalness: 0.6, roughness: 0.35 });
   const tyreMat = new THREE.MeshStandardMaterial({ color: 0x14181c, roughness: 0.9 });
   const robe = new THREE.MeshStandardMaterial({ color: 0x8a1c2b, roughness: 0.8 });
   const skin = new THREE.MeshStandardMaterial({ color: 0xd9a27a, roughness: 0.8 });
@@ -110,11 +119,11 @@ function buildBike() {
   rod(V(-0.28, 1.12, 0.4), V(0.28, 1.12, 0.4), 0.025, tyreMat);
 
   // rider: a jointed cyclist whose legs really turn the pedals
-  const jacket = new THREE.MeshStandardMaterial({ color: 0x1f4e8c, roughness: 0.7 });
+  const jacket = new THREE.MeshStandardMaterial({ color: hsl(dressHue, 0.64, 0.36), roughness: 0.7 });
   const trousers = new THREE.MeshStandardMaterial({ color: 0x23262e, roughness: 0.8 });
   const shoeMat = new THREE.MeshStandardMaterial({ color: 0xe8e8e8, roughness: 0.6 });
-  const helmetMat = new THREE.MeshStandardMaterial({ color: 0xf4f1e8, roughness: 0.35 });
-  const packMat = new THREE.MeshStandardMaterial({ color: 0x8a1c2b, roughness: 0.8 });
+  const helmetMat = new THREE.MeshStandardMaterial({ color: hsl(bikeHue, 0.45, 0.82), roughness: 0.35 });
+  const packMat = new THREE.MeshStandardMaterial({ color: hsl(dressHue + 150, 0.6, 0.32), roughness: 0.8 });
   const tmp = V(0, 0, 0);
   const add = (geo, mat, x, y, z) => {
     const m = new THREE.Mesh(geo, mat);
@@ -179,14 +188,99 @@ function buildBike() {
   };
   pedal(0);
 
-  const lamp = new THREE.PointLight(0xffd9a0, 14, 26, 1.5);
-  lamp.position.set(0, 1.3, 0.9);
-  rollG.add(lamp);
+  if (withLamp) {
+    const lamp = new THREE.PointLight(0xffd9a0, 14, 26, 1.5);
+    lamp.position.set(0, 1.3, 0.9);
+    rollG.add(lamp);
+  }
 
   return { root, pitchG, rollG, wheels, pedal };
 }
-const bike = buildBike();
+// ---------- live riders ----------
+// Everyone else who is riding in this painting right now, on their own coloured bike with their
+// guest name floating above. See net.js for how the positions travel.
+const net = createNet(ROOM);
+const bike = buildBike(net.me);
 scene.add(bike.root);
+
+function nameTag(text, hue) {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 96;
+  const g = c.getContext('2d');
+  g.font = '600 44px ui-sans-serif, system-ui, sans-serif';
+  const w = Math.min(492, g.measureText(text).width + 56);
+  g.fillStyle = 'rgba(12, 8, 6, 0.62)';
+  g.beginPath(); g.roundRect((512 - w) / 2, 14, w, 68, 34); g.fill();
+  g.fillStyle = `hsl(${hue}, 85%, 78%)`;
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(text, 256, 50, 440);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false }));
+  s.scale.set(4.2, 0.79, 1);
+  s.position.y = 2.75;
+  return s;
+}
+const others = new Map(); // rider id -> { bike, tag, name, x, y, z, yaw }
+const MAX_SHOWN = 16;
+function updateOthers(dt) {
+  const tNow = performance.now() / 1000;
+  let shown = 0;
+  for (const p of net.peers.values()) {
+    const here = p.playing && p.chapter === ROOM && tNow - p.seen < 7;
+    let o = others.get(p.id);
+    if (!here || (!o && shown >= MAX_SHOWN)) continue;
+    shown++;
+    if (!o) {
+      o = { bike: buildBike({ bike: p.bike, dress: p.dress, lamp: false }), name: '', hue: p.bike, x: p.x, y: p.y, z: p.z, yaw: p.yaw };
+      scene.add(o.bike.root);
+      others.set(p.id, o);
+    }
+    if (o.name !== p.name) {
+      if (o.tag) { o.bike.root.remove(o.tag); o.tag.material.map.dispose(); o.tag.material.dispose(); }
+      o.tag = nameTag(p.name, p.bike);
+      o.bike.root.add(o.tag);
+      o.name = p.name;
+    }
+    // where they should be by now: their last report, carried on along their heading
+    const ahead = Math.min(tNow - p.seen, 0.6) * p.speed;
+    const tx = nearest(p.x + Math.sin(p.yaw) * ahead, P.x), tz = nearest(p.z + Math.cos(p.yaw) * ahead, P.z);
+    if (Math.hypot(tx - o.x, tz - o.z) > 30) { o.x = tx; o.z = tz; o.y = p.y; o.yaw = p.yaw; } // too far to glide: jump there
+    o.x = damp(o.x, tx, 7, dt);
+    o.z = damp(o.z, tz, 7, dt);
+    o.y = damp(o.y, p.y, 9, dt);
+    let dy = p.yaw - o.yaw;
+    dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    o.yaw += dy * (1 - Math.exp(-8 * dt));
+    o.bike.root.position.set(o.x, o.y, o.z);
+    o.bike.root.rotation.y = o.yaw;
+    o.bike.rollG.rotation.z = damp(o.bike.rollG.rotation.z, clamp(-dy * 1.2, -0.4, 0.4), 6, dt);
+    const spin = (p.speed * dt) / 0.38;
+    for (const w of o.bike.wheels) w.rotation.x += spin;
+    if (p.speed > 0.5) o.bike.pedal(-spin * 0.4);
+  }
+  for (const [id, o] of others) {
+    const p = net.peers.get(id);
+    if (p && p.playing && p.chapter === ROOM && tNow - p.seen < 7) continue;
+    scene.remove(o.bike.root);
+    o.bike.root.traverse((m) => { if (m.isMesh) { m.geometry.dispose(); } });
+    others.delete(id);
+  }
+}
+let liveShown = '';
+function updateLive() {
+  const playing = G.state === 'play' || G.state === 'paused';
+  net.send({ p: playing && !intro, x: P.x, y: P.y, z: P.z, h: P.yaw, s: P.grounded ? P.speed : Math.hypot(P.vx, P.vz) });
+  const n = net.riding(playing);
+  const text = !net.connected() ? '' : `${n} riding now`;
+  if (text !== liveShown) {
+    liveShown = text;
+    $('liveCount').textContent = text;
+    $('live').classList.toggle('on', !!text);
+    const who = ` · you are ${net.me.name}`;
+    $('menuLive').textContent = text ? (n > 0 ? `● ${n} riding right now` : '● No one is riding yet, be the first') + who : '';
+  }
+}
 
 // ---------- stars ----------
 function glowTexture() {
@@ -215,6 +309,7 @@ function placeStar(s) {
   for (let tries = 0; tries < 40; tries++) {
     const spot = W.starSpot();
     if (!spot) continue;
+    spot.x = nearest(spot.x, P.x); spot.z = nearest(spot.z, P.z);
     if (Math.hypot(spot.x - MON.x, spot.z - MON.z) < 28) continue;
     if (Math.hypot(spot.x - P.x, spot.z - P.z) < 15) continue;
     Object.assign(s, spot);
@@ -284,7 +379,27 @@ function audio() {
   engOsc.connect(engFilter).connect(engGain).connect(master);
   engOsc.start();
 
-  Object.assign(loops, { windFilter, windGain, engOsc, engGain });
+  // people talking: the same noise through two voice-range filters whose loudness wanders, so it
+  // sounds like a crowd murmuring rather than a hiss. Only heard near cafés, markets and groups.
+  const talkGain = actx.createGain();
+  talkGain.gain.value = 0;
+  for (const [freq, rate] of [[420, 2.3], [760, 3.1], [1150, 1.7]]) {
+    const f = actx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.frequency.value = freq;
+    f.Q.value = 2.2;
+    const g = actx.createGain();
+    g.gain.value = 0.5;
+    const lfo = actx.createOscillator(), depth = actx.createGain();
+    lfo.frequency.value = rate;
+    depth.gain.value = 0.45;
+    lfo.connect(depth).connect(g.gain);
+    lfo.start();
+    noise.connect(f).connect(g).connect(talkGain);
+  }
+  talkGain.connect(master);
+
+  Object.assign(loops, { windFilter, windGain, engOsc, engGain, talkGain });
   startMusic(actx);
   return actx;
 }
@@ -312,6 +427,7 @@ function updateAudio(ev) {
   const sp = playing ? (P.grounded ? Math.abs(P.speed) : Math.hypot(P.vx, P.vy, P.vz)) : 0;
   loops.windGain.gain.setTargetAtTime(Math.min(sp / 40, 1) * 0.1, t, 0.15);
   loops.windFilter.frequency.setTargetAtTime(350 + sp * 35, t, 0.15);
+  loops.talkGain.gain.setTargetAtTime(playing ? (ev.murmur || 0) * 0.16 : 0, t, 0.4);
   const near = playing ? ev.nearCar : null;
   loops.engGain.gain.setTargetAtTime(near ? (1 - near.dist / 32) ** 2 * 0.09 : 0, t, 0.12);
   if (near) loops.engOsc.frequency.setTargetAtTime(48 + near.speed * 5, t, 0.1);
@@ -483,8 +599,9 @@ function toast(text, bad = false) {
   toastTimer = 1.8;
 }
 
-function startGame() {
-  Object.assign(P, { x: 0, z: 40, yaw: Math.PI, speed: 0, vx: 0, vy: 0, vz: 0, gvy: 0, grounded: true, pitch: 0, roll: 0, flip: 0, spin: 0, air: 0, crash: 0 });
+function startGame(viaPainting = false) {
+  intro = null;
+  Object.assign(P, { x: 0, z: 40, yaw: Math.PI, speed: 0, vx: 0, vy: 0, vz: 0, gvy: 0, grounded: true, pitch: 0, roll: 0, flip: 0, spin: 0, air: 0, crash: 0, parked: false, steer: 0, refYaw: null });
   if (INFO.spawn) Object.assign(P, INFO.spawn);
   P.y = heightAt(P.x, P.z);
   hero?.reset();
@@ -497,10 +614,12 @@ function startGame() {
   $('pause').classList.remove('on');
   $('btnPause').textContent = '❚❚';
   if (actx) actx.resume().catch(() => {});
-  $('hud').classList.add('on');
   camPos.set(P.x, P.y + 5, P.z + 10);
   Object.assign(orbit, { yaw: 0, pitch: 0, zoom: 1 });
-  showBrief();
+  if (!viaPainting) { // coming through the painting, these appear once we're inside
+    $('hud').classList.add('on');
+    showBrief();
+  }
   tone(392, 1.2, 0.08);
 }
 
@@ -547,18 +666,60 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) setPaused(true);
 });
 
-// From the title screen: if this world has a painting, zoom into it and open onto the ride.
+// From the title screen: if this world has a painting, fly into it and come out in the ride.
+// The words fade, the room around the framed painting fades to show the city waiting behind it,
+// then the camera glides down towards the bike while the painting swells to fill the view and
+// opens from the middle, so the ride is what you find inside it.
+let intro = null;
+const INTRO = { room: 0.3, fly: 0.85, end: 3.1, cross: 0.62 }; // seconds; cross = where we pass through
 function begin() {
   const menu = $('menu');
   if (G.state === 'play' || menu.classList.contains('entering')) return;
   if (!menu.classList.contains('gallery') || !menu.classList.contains('on')) return startGame();
   try { audio(); } catch { /* sound is optional */ } // must be created inside the click itself
   menu.classList.add('entering');
-  setTimeout(() => {
-    startGame();
-    camPos.set(P.x, P.y + 95, P.z + 45); // the ride opens with the camera dropping in from above
-  }, 700);
-  setTimeout(() => menu.classList.remove('on', 'entering'), 1800);
+  startGame(true);
+  const fx = Math.sin(P.yaw), fz = Math.cos(P.yaw);
+  const r = $('frame').getBoundingClientRect();
+  intro = {
+    t: 0,
+    from: new THREE.Vector3(P.x - fx * 26, P.y + 22, P.z - fz * 26),
+    fromLook: new THREE.Vector3(P.x + fx * 10, P.y + 2, P.z + fz * 10),
+    to: new THREE.Vector3(P.x - fx * 8.5, P.y + 2.7, P.z - fz * 8.5),
+    toLook: new THREE.Vector3(P.x + fx * 6, P.y + 2.6, P.z + fz * 6), // where the ride camera looks
+    dx: r.left + r.width / 2 - innerWidth / 2, // how far the painting sits off the middle of the screen
+    dy: r.top + r.height / 2 - innerHeight / 2,
+  };
+}
+const smoother = (x) => x * x * x * (x * (x * 6 - 15) + 10);
+function introCamera(dt) {
+  const I = intro;
+  I.t += dt;
+  const menu = $('menu'), fr = $('frame');
+  if (I.t > INTRO.room) menu.classList.add('swapped');
+  const u = clamp((I.t - INTRO.fly) / (INTRO.end - INTRO.fly), 0, 1);
+  const p = smoother(u);
+  camera.position.lerpVectors(I.from, I.to, p);
+  lookAt.lerpVectors(I.fromLook, I.toLook, p);
+  camera.lookAt(lookAt);
+  camPos.copy(camera.position);
+  // the painting: drifts to the middle of the view, grows as we close in, opens up as we pass
+  const near = Math.max(0.015, 1 - p / INTRO.cross);
+  const s = 1 / near;
+  const centre = 1 - smoother(clamp(p / 0.32, 0, 1));
+  const hole = clamp((s - 1.8) / 5, 0, 1);
+  fr.style.transform = `translate(${-I.dx * (1 - centre)}px, ${-I.dy * (1 - centre)}px) scale(${s})`;
+  const rIn = hole * 75, edge = 4 + hole * 14;
+  fr.style.webkitMaskImage = fr.style.maskImage = hole > 0
+    ? `radial-gradient(ellipse at 50% 50%, transparent ${rIn}%, #000 ${rIn + edge}%)` : '';
+  fr.style.opacity = p >= INTRO.cross ? 0 : String(clamp(1.25 - hole, 0, 1));
+  if (u >= 1) {
+    intro = null;
+    fr.style.transform = fr.style.maskImage = fr.style.webkitMaskImage = fr.style.opacity = '';
+    menu.classList.remove('on', 'entering', 'swapped');
+    $('hud').classList.add('on');
+    showBrief();
+  }
 }
 if (INFO.painting) {
   $('painting').src = import.meta.env.BASE_URL + INFO.painting.file;
@@ -606,7 +767,7 @@ function land(h) {
   P.y = h;
   P.grounded = true;
   const fx = Math.sin(P.yaw), fz = Math.cos(P.yaw);
-  P.speed = P.vx * fx + P.vz * fz; // landing sideways costs speed
+  P.speed = Math.max(0, P.vx * fx + P.vz * fz); // landing sideways costs speed
   P.gvy = 0;
   const flips = Math.round(P.flip / TAU);
   const halfSpins = Math.round(Math.abs(P.spin) / Math.PI);
@@ -634,7 +795,22 @@ function land(h) {
 
 function collide() {
   const r = Math.hypot(P.x, P.z);
-  if (r > WORLD_R) {
+  if (W.SOFT_EDGE) {
+    // no wall: out in the fields the bike is eased round to face the town again, harder the
+    // further out it goes, and can't get more than a little way from the last houses
+    const out = r - (WORLD_R + 6);
+    if (out > 0) {
+      let turn = Math.atan2(-P.x, -P.z) - P.yaw;
+      turn = Math.atan2(Math.sin(turn), Math.cos(turn));
+      const pull = Math.min(1, out / 30);
+      P.yaw += turn * 0.05 * pull;
+      if (!P.grounded) { P.vx -= (P.x / r) * pull * 0.5; P.vz -= (P.z / r) * pull * 0.5; }
+      P.speed = Math.min(P.speed, 30 - 16 * pull);
+      if (out > 4 && !P.edgeTold) { P.edgeTold = true; toast('The road ends in the fields. Turning back to town.'); }
+      const limit = WORLD_R + 70;
+      if (r > limit) { P.x *= limit / r; P.z *= limit / r; }
+    } else if (out < -12) P.edgeTold = false;
+  } else if (!WRAP && r > WORLD_R) {
     P.x *= WORLD_R / r; P.z *= WORLD_R / r;
     P.speed *= 0.5; P.vx *= 0.5; P.vz *= 0.5;
   }
@@ -647,9 +823,10 @@ function collide() {
   if (W.pushOut(P) > 8) tone(140, 0.2, 0.12, 'triangle');
 }
 
+const CRUISE = 6; // the gentle speed the bike keeps by itself
 function updateRider(dt) {
-  const ctl = P.crash <= 0;
-  if (!ctl) P.crash -= dt;
+  const ctl = P.crash <= 0 && !intro; // no riding off while still flying into the painting
+  if (P.crash > 0) P.crash -= dt;
   // The stick steers in proportion to how far it is pushed (gentle near the middle, full at
   // the edge); keys are all or nothing. Either way the turn eases in and out instead of snapping.
   // On the ground the stick points where to ride: push left and the bike turns to face left of
@@ -690,14 +867,21 @@ function updateRider(dt) {
     const slope = (heightAt(P.x + fx, P.z + fz, P.y) - heightAt(P.x - fx, P.z - fz, P.y)) / 2;
     const ang = Math.atan(slope);
     if (ctl) {
+      // The bike only ever goes forward. Left alone it rolls along gently by itself; pedalling
+      // adds speed; down brakes to a halt and it then stays parked until you pedal or steer again.
+      if (gas > 0 || (!keys.analog && (keys.left || keys.right))) P.parked = false;
+      if (brake > 0) {
+        P.speed -= 32 * brake * dt;
+        if (P.speed <= 0.4) P.parked = true;
+      }
       P.speed += 16 * gas * dt;
-      P.speed -= (P.speed > 0 ? 32 : 8) * brake * dt;
+      if (!P.parked && brake === 0 && P.speed < CRUISE) P.speed = Math.min(CRUISE, P.speed + 9 * dt);
     }
     P.speed -= 18 * Math.sin(ang) * dt; // hills push back, descents give speed
     P.speed -= P.speed * 0.5 * dt;
-    P.speed = clamp(P.speed, -6, 44);
+    P.speed = clamp(P.speed, 0, 44);
     // a bike turns with its speed; pushing the stick sideways from a standstill still swings it round slowly
-    const turnable = gas > 0 ? Math.max(0.45, clamp(P.speed / 7, -1, 1)) : clamp(P.speed / 7, -1, 1);
+    const turnable = P.parked ? 0 : Math.max(0.45, clamp(P.speed / 7, 0, 1)); // can always turn away from a wall
     P.yaw += steer * 2.4 * turnable * dt;
     P.x += Math.sin(P.yaw) * P.speed * dt;
     P.z += Math.cos(P.yaw) * P.speed * dt;
@@ -741,11 +925,18 @@ function updateRider(dt) {
   bike.rollG.rotation.z = P.roll;
   const spin = (P.grounded ? P.speed : Math.hypot(P.vx, P.vz)) * dt / 0.38;
   for (const w of bike.wheels) w.rotation.x += spin;
-  if (P.grounded && gas > 0 && P.crash <= 0) bike.pedal(-spin * 0.4); // legs turn only while pedalling
+  if (P.grounded && P.speed > 0.5 && brake === 0 && P.crash <= 0) bike.pedal(-spin * 0.4); // legs turn only while pedalling
 }
 
 function updateStars(t, dt) {
+  if (WRAP) {
+    MON.x = nearest(MON_HOME.x, P.x); MON.z = nearest(MON_HOME.z, P.z);
+  }
   for (const s of stars) {
+    if (WRAP) {
+      s.x = nearest(s.x, P.x); s.z = nearest(s.z, P.z);
+      s.group.position.x = s.x; s.group.position.z = s.z;
+    }
     s.group.position.y = s.y + Math.sin(t * 2 + s.ph) * 0.25;
     s.core.rotation.y = t * 1.5 + s.ph;
     if (G.state !== 'play') continue;
@@ -874,6 +1065,7 @@ function updateCamera(t, dt) {
     camera.lookAt(MON.x, HILL_H + 7, MON.z);
     return;
   }
+  if (intro) return introCamera(dt);
   // follow the direction of travel, so spins in the air stay visible
   const target = P.grounded || Math.hypot(P.vx, P.vz) < 2 ? P.yaw : Math.atan2(P.vx, P.vz);
   let diff = target - camYaw;
@@ -955,7 +1147,13 @@ let frameNo = 0;
 function drawMapFrame() {
   const g = mapCtx, k = MAP_S / MAP_SPAN, c = MAP_S / 2;
   g.clearRect(0, 0, MAP_S, MAP_S);
-  g.drawImage(mapBg, 0, 0);
+  g.save();
+  if (WRAP) {
+    // an endless town: the map scrolls so the rider stays in the middle
+    g.translate(-P.x * k, -P.z * k);
+    const ix = Math.round(P.x / WRAP), iz = Math.round(P.z / WRAP);
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) g.drawImage(mapBg, (ix + i) * MAP_S, (iz + j) * MAP_S);
+  } else g.drawImage(mapBg, 0, 0);
   for (const s of stars) {
     g.fillStyle = hex(INFO.colors[s.high ? 1 : 0]);
     g.strokeStyle = '#1c120e';
@@ -974,6 +1172,13 @@ function drawMapFrame() {
   }
   g.fillStyle = '#bfe3ff';
   for (const car of W.traffic ?? []) g.fillRect(c + car.x * k - 4, c + car.z * k - 4, 8, 8);
+  // other riders: a dot in their bike's colour
+  for (const o of others.values()) {
+    g.fillStyle = `hsl(${o.hue}, 80%, 62%)`;
+    g.strokeStyle = '#ffffff';
+    g.lineWidth = 3;
+    g.beginPath(); g.arc(c + o.x * k, c + o.z * k, 9, 0, TAU); g.fill(); g.stroke();
+  }
   // the rider: an arrow pointing the way the bike faces
   g.save();
   g.translate(c + P.x * k, c + P.z * k);
@@ -983,6 +1188,7 @@ function drawMapFrame() {
   g.lineWidth = 4;
   g.beginPath(); g.moveTo(0, -20); g.lineTo(13, 14); g.lineTo(0, 7); g.lineTo(-13, 14); g.closePath();
   g.stroke(); g.fill();
+  g.restore();
   g.restore();
 }
 
@@ -1076,10 +1282,12 @@ function tick(dt, t) {
   if (G.state === 'play') {
     if (hero) hero.update(dt);
     else updateRider(dt);
-    G.time -= dt;
+    if (!intro) G.time -= dt; // the night starts once we're through the painting
     if (G.time <= 0) endGame();
   }
   updateStars(t, dt);
+  updateOthers(dt);
+  updateLive();
   updateCamera(t, dt);
   updateGuide(t);
   if (G.state === 'play') {
@@ -1108,5 +1316,5 @@ function frame() {
 renderer.setAnimationLoop(frame);
 
 // handy for testing from the console
-window.__aurora = { begin, setPaused, hero, sim: (n, dt = 1 / 60) => { for (let i = 0; i < n; i++) tick(dt, clock.elapsedTime + i * dt); }, P, G, keys, stars, W, orbit, music, startGame, endGame, audioState: () => actx?.state };
+window.__aurora = { begin, net, others, INTRO, introState: () => intro, setPaused, hero, sim: (n, dt = 1 / 60) => { for (let i = 0; i < n; i++) tick(dt, clock.elapsedTime + i * dt); }, P, G, keys, stars, W, orbit, music, startGame, endGame, audioState: () => actx?.state };
 

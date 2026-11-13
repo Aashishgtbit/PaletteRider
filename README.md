@@ -8,16 +8,18 @@ Each chapter turns a real artwork into a small 3D city you can explore. Somethin
 
 **Chapter 1: Castle and Sun** (Paul Klee, 1928). A patchwork city of coloured blocks and triangle roofs, with traffic, townsfolk, rooftops to ride on and ramps to flip from. Collect the little suns and bring them to the castle.
 
-**Chapter 2: Café Terrace at Night** (Vincent van Gogh, 1888). The streets of Arles, painted in thick brush strokes under a swirling night sky. Gather the fallen stars and carry them to the glowing café, and watch each one return to the sky.
+**Chapter 2: Café Terrace at Night** (Vincent van Gogh, 1888). The streets of Arles, painted in thick brush strokes under a swirling night sky. Gather the fallen stars and carry them to the glowing café, and watch each one return to the sky. Guests sit at the café tables, market stalls line the square and some streets, and people stop to talk. The town has no wall: its streets fade into dark fields of cypresses, and a rider who wanders out is turned gently back.
 
-Every ride opens on the original painting and zooms into it. Runs in any modern browser, on desktop or phone.
+Every ride opens on the original painting and flies into it. The bike rolls along gently by itself: steer it, pedal to go faster, and press down to stop.
+
+**Live riders.** Other people playing at the same moment appear on the streets on their own coloured bikes, each with a guest name, and the game shows how many are riding right now. Runs in any modern browser, on desktop or phone.
 
 ## Controls
 
 | Action | Keyboard | Phone |
 |---|---|---|
-| Pedal / brake | W / S | Thumb stick up / down |
-| Steer | A / D | Thumb stick left / right |
+| Go faster / stop | W / S | Push the thumb stick / pull it back |
+| Steer | A / D | Point the thumb stick where you want to ride |
 | Jump, hold to glide | Space | JUMP button |
 | Flip / spin in the air | W, S / A, D | Thumb stick |
 | Look around | Drag with the mouse, scroll to zoom | Drag the screen, pinch to zoom |
@@ -40,6 +42,10 @@ Open the address it prints. Choose a chapter on the title screen, or add `?chapt
 ## Made with
 
 [Three.js](https://threejs.org) and [Vite](https://vitejs.dev). The cities, people, music and sound are all generated in code; the only image files are the two paintings.
+
+## Live riders
+
+There is no game server. Each browser sends its rider's position a few times a second to a free public message relay (an MQTT broker over WebSocket) and listens for the others; see `src/net.js`. Only a random id, a made-up guest name, two colours and a position are sent. Public relays come with no guarantees, so if one is unreachable the game simply plays solo. To use your own relay, change `RELAYS` in `src/net.js`.
 
 ## Paintings
 
