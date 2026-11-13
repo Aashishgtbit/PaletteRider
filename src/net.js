@@ -69,7 +69,7 @@ export function createNet(chapter) {
       peers.set(id, p);
     }
     Object.assign(p, {
-      name: cleanName(m.n), bike: num(m.b, 0, 360), dress: num(m.d, 0, 360), chapter: ch, playing: m.p === 1,
+      name: cleanName(m.n), bike: num(m.b, 0, 360), dress: num(m.d, 0, 360), chapter: ch, playing: m.p === 1, foot: m.f === 1,
       x: num(m.x, -5000, 5000), y: num(m.y, -500, 5000), z: num(m.z, -5000, 5000),
       yaw: num(m.h, -1000, 1000), speed: num(m.s, 0, 80), seen: now(),
     });
@@ -131,7 +131,7 @@ export function createNet(chapter) {
     lastSent = t;
     const r = (v) => Math.round(v * 100) / 100;
     ws.send(publishPacket(myTopic, JSON.stringify({
-      n: me.name, b: me.bike, d: me.dress, p: state.p ? 1 : 0, x: r(state.x), y: r(state.y), z: r(state.z), h: r(state.h), s: r(state.s),
+      n: me.name, b: me.bike, d: me.dress, p: state.p ? 1 : 0, f: state.f ? 1 : 0, x: r(state.x), y: r(state.y), z: r(state.z), h: r(state.h), s: r(state.s),
     })));
   }
   pingTimer = setInterval(() => {
@@ -147,7 +147,7 @@ export function createNet(chapter) {
   return {
     me,
     peers,
-    /** Tell the others where this rider is: { p: playing?, x, y, z, h: heading, s: speed }. */
+    /** Tell the others where this rider is: { p: playing?, f: on foot?, x, y, z, h: heading, s: speed }. */
     send: (state) => publish(state, false),
     connected: () => open,
     /** Riders in a ride right now, counting this one if it is playing. */

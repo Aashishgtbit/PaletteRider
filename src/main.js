@@ -11,6 +11,7 @@ import * as arles from './arles.js';
 import * as giverny from './giverny.js';
 import { TIP_URL, TIP_LABEL } from './support.js';
 import { createNet } from './net.js';
+import { createMindGames } from './mind.js';
 
 // The painted city is the default world; add ?world=valley to ride the Himalayan valley.
 // Chapter 1 is the Klee city, chapter 2 is Van Gogh's Arles (?chapter=2), chapter 3 is Monet's garden (?chapter=3).
@@ -77,6 +78,8 @@ function buildBike({ bike: bikeHue = 42, dress: dressHue = 215, lamp: withLamp =
   rollG.position.y = -0.6;
   root.add(pitchG);
   pitchG.add(rollG);
+  const riderG = new THREE.Group(); // the cyclist, hidden while they are off the bike
+  rollG.add(riderG);
 
   const frameMat = new THREE.MeshStandardMaterial({ color: hsl(bikeHue, 0.72, 0.52), metalness: 0.6, roughness: 0.35 });
   const tyreMat = new THREE.MeshStandardMaterial({ color: 0x14181c, roughness: 0.9 });
@@ -85,12 +88,12 @@ function buildBike({ bike: bikeHue = 42, dress: dressHue = 215, lamp: withLamp =
   const wool = new THREE.MeshStandardMaterial({ color: 0xf0c040, roughness: 0.9 });
   const V = (x, y, z) => new THREE.Vector3(x, y, z);
   const up = V(0, 1, 0);
-  const rod = (a, b, r, mat) => {
+  const rod = (a, b, r, mat, parent = rollG) => {
     const d = b.clone().sub(a);
     const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, d.length(), 6), mat);
     m.position.copy(a).addScaledVector(d, 0.5);
     m.quaternion.setFromUnitVectors(up, d.normalize());
-    rollG.add(m);
+    parent.add(m);
     return m;
   };
 
@@ -130,7 +133,7 @@ function buildBike({ bike: bikeHue = 42, dress: dressHue = 215, lamp: withLamp =
   const add = (geo, mat, x, y, z) => {
     const m = new THREE.Mesh(geo, mat);
     m.position.set(x, y, z);
-    rollG.add(m);
+    riderG.add(m);
     return m;
   };
   // a limb segment that can be re-aimed every frame
@@ -148,15 +151,15 @@ function buildBike({ bike: bikeHue = 42, dress: dressHue = 215, lamp: withLamp =
   torso.rotation.x = 0.61; // leaning over the bars
   const pack = add(new THREE.BoxGeometry(0.27, 0.36, 0.13), packMat, 0, 1.33, -0.2);
   pack.rotation.x = 0.61;
-  rod(V(0, 1.5, 0.12), V(0, 1.6, 0.17), 0.05, skin); // neck
+  rod(V(0, 1.5, 0.12), V(0, 1.6, 0.17), 0.05, skin, riderG); // neck
   const face = add(new THREE.SphereGeometry(0.11, 16, 12), skin, 0, 1.68, 0.2);
   face.scale.set(0.92, 1.1, 1);
   const helmet = add(new THREE.SphereGeometry(0.135, 16, 10, 0, TAU, 0, Math.PI * 0.55), helmetMat, 0, 1.7, 0.19);
   helmet.scale.set(1, 0.95, 1.25);
   for (const sd of [-1, 1]) {
     const shoulder = V(sd * 0.21, 1.46, 0.1), elbow = V(sd * 0.27, 1.27, 0.27), hand = V(sd * 0.25, 1.15, 0.4);
-    rod(shoulder, elbow, 0.052, jacket);
-    rod(elbow, hand, 0.043, jacket);
+    rod(shoulder, elbow, 0.052, jacket, riderG);
+    rod(elbow, hand, 0.043, jacket, riderG);
     add(new THREE.SphereGeometry(0.05, 10, 8), skin, hand.x, hand.y, hand.z);
   }
 
@@ -169,6 +172,7 @@ function buildBike({ bike: bikeHue = 42, dress: dressHue = 215, lamp: withLamp =
     crank: bone(0.02, tyreMat),
     shoe: add(new THREE.BoxGeometry(0.1, 0.07, 0.26), shoeMat, 0, 0, 0),
   }));
+  for (const L of legs) rollG.add(L.crank); // the cranks stay with the bike
   const hip = V(0, 0, 0), knee = V(0, 0, 0), foot = V(0, 0, 0), axle = V(0, 0, 0);
   let crankAngle = 0;
   const pedal = (turn) => {
@@ -196,7 +200,56 @@ function buildBike({ bike: bikeHue = 42, dress: dressHue = 215, lamp: withLamp =
     rollG.add(lamp);
   }
 
-  return { root, pitchG, rollG, wheels, pedal };
+  return { root, pitchG, rollG, riderG, wheels, pedal };
+}
+
+// The same rider on foot: walks with swinging arms and legs, in their own jacket and helmet.
+function buildWalker({ bike: bikeHue = 42, dress: dressHue = 215 } = {}) {
+  const hsl = (h, s, l) => new THREE.Color().setHSL((((h % 360) + 360) % 360) / 360, s, l);
+  const root = new THREE.Group();
+  const body = new THREE.Group(); // bobs while walking
+  root.add(body);
+  const jacket = new THREE.MeshStandardMaterial({ color: hsl(dressHue, 0.64, 0.36), roughness: 0.7 });
+  const trousers = new THREE.MeshStandardMaterial({ color: 0x23262e, roughness: 0.8 });
+  const skin = new THREE.MeshStandardMaterial({ color: 0xd9a27a, roughness: 0.8 });
+  const shoeMat = new THREE.MeshStandardMaterial({ color: 0xe8e8e8, roughness: 0.6 });
+  const helmetMat = new THREE.MeshStandardMaterial({ color: hsl(bikeHue, 0.45, 0.82), roughness: 0.35 });
+  const packMat = new THREE.MeshStandardMaterial({ color: hsl(dressHue + 150, 0.6, 0.32), roughness: 0.8 });
+  const add = (parent, geo, mat, x, y, z) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    parent.add(m);
+    return m;
+  };
+  add(body, new THREE.CapsuleGeometry(0.16, 0.36, 4, 12), jacket, 0, 1.22, 0).scale.set(1.25, 1, 0.8);
+  add(body, new THREE.BoxGeometry(0.28, 0.38, 0.14), packMat, 0, 1.26, -0.17);
+  add(body, new THREE.CylinderGeometry(0.05, 0.05, 0.1, 8), skin, 0, 1.53, 0);
+  add(body, new THREE.SphereGeometry(0.115, 16, 12), skin, 0, 1.66, 0.01).scale.set(0.92, 1.1, 1);
+  add(body, new THREE.SphereGeometry(0.135, 16, 10, 0, TAU, 0, Math.PI * 0.55), helmetMat, 0, 1.69, 0).scale.set(1, 0.95, 1.2);
+  const limb = (x, y, len, r, mat, shoe) => {
+    const pivot = new THREE.Group();
+    pivot.position.set(x, y, 0);
+    body.add(pivot);
+    add(pivot, new THREE.CapsuleGeometry(r, len, 4, 8), mat, 0, -len / 2 - r * 0.5, 0);
+    if (shoe) add(pivot, new THREE.BoxGeometry(0.11, 0.08, 0.26), shoeMat, 0, -len - r - 0.02, 0.05);
+    else add(pivot, new THREE.SphereGeometry(0.05, 10, 8), skin, 0, -len - r, 0);
+    return pivot;
+  };
+  const legs = [limb(-0.1, 0.9, 0.74, 0.075, trousers, true), limb(0.1, 0.9, 0.74, 0.075, trousers, true)];
+  const arms = [limb(-0.25, 1.44, 0.52, 0.05, jacket, false), limb(0.25, 1.44, 0.52, 0.05, jacket, false)];
+  let phase = 0;
+  // speed in m/s: the stride grows with it, and settles to standing when still
+  const step = (speed, dt) => {
+    const amount = clamp(speed / 3.5, 0, 1);
+    phase += dt * (3 + speed * 2.2);
+    const sw = Math.sin(phase) * 0.6 * amount;
+    legs[0].rotation.x = sw; legs[1].rotation.x = -sw;
+    arms[0].rotation.x = -sw * 0.8; arms[1].rotation.x = sw * 0.8;
+    body.position.y = Math.abs(Math.cos(phase)) * 0.05 * amount;
+  };
+  step(0, 0);
+  root.visible = false;
+  return { root, step };
 }
 // ---------- live riders ----------
 // Everyone else who is riding in this painting right now, on their own coloured bike with their
@@ -204,6 +257,8 @@ function buildBike({ bike: bikeHue = 42, dress: dressHue = 215, lamp: withLamp =
 const net = createNet(ROOM);
 const bike = buildBike(net.me);
 scene.add(bike.root);
+const walker = buildWalker(net.me);
+scene.add(walker.root);
 
 function nameTag(text, hue) {
   const c = document.createElement('canvas');
@@ -234,14 +289,13 @@ function updateOthers(dt) {
     if (!here || (!o && shown >= MAX_SHOWN)) continue;
     shown++;
     if (!o) {
-      o = { bike: buildBike({ bike: p.bike, dress: p.dress, lamp: false }), name: '', hue: p.bike, x: p.x, y: p.y, z: p.z, yaw: p.yaw };
-      scene.add(o.bike.root);
+      o = { bike: buildBike({ bike: p.bike, dress: p.dress, lamp: false }), walker: buildWalker({ bike: p.bike, dress: p.dress }), name: '', hue: p.bike, x: p.x, y: p.y, z: p.z, yaw: p.yaw };
+      scene.add(o.bike.root, o.walker.root);
       others.set(p.id, o);
     }
     if (o.name !== p.name) {
-      if (o.tag) { o.bike.root.remove(o.tag); o.tag.material.map.dispose(); o.tag.material.dispose(); }
+      if (o.tag) { o.tag.parent?.remove(o.tag); o.tag.material.map.dispose(); o.tag.material.dispose(); }
       o.tag = nameTag(p.name, p.bike);
-      o.bike.root.add(o.tag);
       o.name = p.name;
     }
     // where they should be by now: their last report, carried on along their heading
@@ -254,8 +308,16 @@ function updateOthers(dt) {
     let dy = p.yaw - o.yaw;
     dy = Math.atan2(Math.sin(dy), Math.cos(dy));
     o.yaw += dy * (1 - Math.exp(-8 * dt));
+    // on foot or on the bike
+    o.bike.root.visible = !p.foot;
+    o.walker.root.visible = !!p.foot;
+    const shown = p.foot ? o.walker.root : o.bike.root;
+    if (o.tag.parent !== shown) shown.add(o.tag);
+    if (p.foot) o.walker.step(p.speed, dt);
     o.bike.root.position.set(o.x, o.y, o.z);
     o.bike.root.rotation.y = o.yaw;
+    o.walker.root.position.set(o.x, o.y, o.z);
+    o.walker.root.rotation.y = o.yaw;
     o.bike.rollG.rotation.z = damp(o.bike.rollG.rotation.z, clamp(-dy * 1.2, -0.4, 0.4), 6, dt);
     const spin = (p.speed * dt) / 0.38;
     for (const w of o.bike.wheels) w.rotation.x += spin;
@@ -264,16 +326,17 @@ function updateOthers(dt) {
   for (const [id, o] of others) {
     const p = net.peers.get(id);
     if (p && p.playing && p.chapter === ROOM && tNow - p.seen < 7) continue;
-    scene.remove(o.bike.root);
-    o.bike.root.traverse((m) => { if (m.isMesh) { m.geometry.dispose(); } });
+    scene.remove(o.bike.root, o.walker.root);
+    for (const r of [o.bike.root, o.walker.root]) r.traverse((m) => { if (m.isMesh) { m.geometry.dispose(); } });
     others.delete(id);
   }
 }
 let liveShown = '';
 function updateLive() {
   const playing = G.state === 'play' || G.state === 'paused';
-  net.send({ p: playing && !intro, x: P.x, y: P.y, z: P.z, h: P.yaw, s: P.grounded ? P.speed : Math.hypot(P.vx, P.vz) });
-  const n = net.riding(playing);
+  const playing2 = playing || G.state === 'mind';
+  net.send({ p: playing2 && !intro, f: P.onFoot, x: P.x, y: P.y, z: P.z, h: P.yaw, s: P.grounded ? P.speed : Math.hypot(P.vx, P.vz) });
+  const n = net.riding(playing2);
   const text = !net.connected() ? '' : `${n} riding now`;
   if (text !== liveShown) {
     liveShown = text;
@@ -507,6 +570,9 @@ try { G.best = Number(localStorage.getItem(BEST_KEY)) || 0; } catch { /* private
 const keys = { up: false, down: false, left: false, right: false, jump: false, jumpPressed: false, ax: 0, ay: 0, analog: false };
 const KEYMAP = { KeyW: 'up', ArrowUp: 'up', KeyS: 'down', ArrowDown: 'down', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right', Space: 'jump' };
 addEventListener('keydown', (e) => {
+  if (G.state === 'mind') return; // the puzzle has its own keys
+  if (e.code === 'KeyF' && G.state === 'play' && !e.repeat) toggleFoot();
+  if (e.code === 'KeyE' && G.state === 'play' && !e.repeat) interact();
   const k = KEYMAP[e.code];
   if (k) {
     e.preventDefault();
@@ -607,6 +673,8 @@ function startGame(viaPainting = false) {
   if (INFO.spawn) Object.assign(P, INFO.spawn);
   P.y = heightAt(P.x, P.z);
   hero?.reset();
+  setFoot(false);
+  if (SPOT_MIND && mind) { Object.assign(P, mind.doorway()); setFoot(true); P.y = heightAt(P.x, P.z); }
   camYaw = P.yaw;
   Object.assign(G, { state: 'play', score: 0, carried: 0, delivered: 0, tricks: 0, time: NIGHT_SECONDS });
   stars.forEach(placeStar);
@@ -823,10 +891,12 @@ function collide() {
     P.speed *= 0.4; P.vx *= 0.4; P.vz *= 0.4;
   }
   if (W.pushOut(P) > 8) tone(140, 0.2, 0.12, 'triangle');
+  if (mind?.pushOut(P) && !P.onFoot) P.speed *= 0.3;
 }
 
 const CRUISE = 6; // the gentle speed the bike keeps by itself
 function updateRider(dt) {
+  if (P.onFoot) return updateWalker(dt);
   const ctl = P.crash <= 0 && !intro; // no riding off while still flying into the painting
   if (P.crash > 0) P.crash -= dt;
   // The stick steers in proportion to how far it is pushed (gentle near the middle, full at
@@ -930,6 +1000,102 @@ function updateRider(dt) {
   if (P.grounded && P.speed > 0.5 && brake === 0 && P.crash <= 0) bike.pedal(-spin * 0.4); // legs turn only while pedalling
 }
 
+// ---------- on foot ----------
+// Get off the bike anywhere (F, or the button) and walk. Walking goes the way you point,
+// relative to the camera: up is away from you, left is to the left of the screen. The bike
+// waits where you left it, leaning on its stand; get back on beside it, or from further away
+// and it is brought round to you.
+const parkedBike = { x: 0, y: 0, z: 0, yaw: 0 };
+const WALK = 4.4; // m/s
+function setFoot(on) {
+  P.onFoot = on;
+  walker.root.visible = on;
+  bike.riderG.visible = !on;
+  document.body.classList.toggle('on-foot', on);
+  $('controls').classList.toggle('foot', on);
+  $('walkLabel').textContent = on ? '🚲 Ride' : '🚶 Get off';
+  if (!on) bike.rollG.rotation.z = 0;
+}
+function toggleFoot() {
+  if (G.state !== 'play' || intro || hero) return;
+  if (!P.onFoot) {
+    if (!P.grounded || P.crash > 0) return;
+    Object.assign(parkedBike, { x: P.x, y: P.y, z: P.z, yaw: P.yaw });
+    // step off to the left of the bike
+    P.x += Math.cos(P.yaw) * 0.9; P.z -= Math.sin(P.yaw) * 0.9;
+    P.speed = 0; P.steer = 0; P.roll = 0; P.pitch = 0;
+    setFoot(true);
+    bike.root.position.set(parkedBike.x, parkedBike.y, parkedBike.z);
+    bike.root.rotation.y = parkedBike.yaw;
+    bike.pitchG.rotation.x = 0;
+    bike.rollG.rotation.z = 0.2; // on its stand
+    tone(330, 0.2, 0.06);
+  } else {
+    const far = Math.hypot(parkedBike.x - P.x, parkedBike.z - P.z) > 4;
+    if (!far) { P.x = parkedBike.x; P.z = parkedBike.z; P.yaw = parkedBike.yaw; }
+    else toast('Your bike was brought round to you');
+    Object.assign(P, { speed: 0, parked: true, refYaw: null, grounded: true, vx: 0, vy: 0, vz: 0 });
+    P.y = heightAt(P.x, P.z, P.y);
+    camYaw = P.yaw;
+    setFoot(false);
+    tone(440, 0.2, 0.06);
+  }
+}
+let nearSpot = null, toldGetOff = false;
+function interact() {
+  if (!nearSpot || G.state !== 'play') return;
+  if (nearSpot.kind === 'hanoi') {
+    if (!P.onFoot) { toggleFoot(); return; } // get off first, then step up to the table
+    for (const k in keys) keys[k] = false;
+    keys.ax = keys.ay = 0;
+    P.speed = 0;
+    G.state = 'mind';
+    $('hud').classList.remove('on');
+    walker.root.visible = false; // out of the way of the table view
+    mind.open();
+  } else if (nearSpot.kind === 'soon') toast(nearSpot.label);
+}
+function updateWalker(dt) {
+  // the stick, or the keys, as a direction on the screen
+  let ix, iy;
+  if (keys.analog) { ix = keys.ax; iy = keys.ay; } else { ix = (keys.right ? 1 : 0) - (keys.left ? 1 : 0); iy = (keys.down ? 1 : 0) - (keys.up ? 1 : 0); }
+  const mag = Math.min(1, Math.hypot(ix, iy));
+  const fx = Math.sin(viewYaw), fz = Math.cos(viewYaw), lx = Math.cos(viewYaw), lz = -Math.sin(viewYaw);
+  const mx = fx * -iy + lx * -ix, mz = fz * -iy + lz * -ix;
+  P.camFollow = false;
+  if (mag > 0.05 && !intro) {
+    let d = Math.atan2(mx, mz) - P.yaw;
+    d = Math.atan2(Math.sin(d), Math.cos(d));
+    P.yaw += d * (1 - Math.exp(-12 * dt));
+    P.camFollow = Math.abs(Math.atan2(-ix, -iy)) < 0.5; // walking away from the camera: it follows behind
+  }
+  P.speed = damp(P.speed, mag > 0.05 && !intro ? WALK * mag : 0, 10, dt);
+  const len = Math.hypot(mx, mz) || 1;
+  P.x += (mag > 0.05 ? mx / len : Math.sin(P.yaw)) * P.speed * dt;
+  P.z += (mag > 0.05 ? mz / len : Math.cos(P.yaw)) * P.speed * dt;
+  P.grounded = true;
+  collide();
+  P.y = heightAt(P.x, P.z, P.y);
+  keys.jumpPressed = false;
+  walker.root.position.set(P.x, P.y, P.z);
+  walker.root.rotation.y = P.yaw;
+  walker.step(P.speed, dt);
+}
+// what to offer near the pavilion: get off, play, or a table still to come
+function updateSpots() {
+  const spot = G.state === 'play' && !intro && mind ? mind.near(P) : null;
+  nearSpot = spot && spot.kind !== 'pavilion' ? spot : null;
+  const act = $('actBtn');
+  if (nearSpot) {
+    $('actLabel').textContent = nearSpot.kind === 'hanoi' && !P.onFoot ? '🚶 Get off to play' : nearSpot.kind === 'hanoi' ? '🧩 ' + nearSpot.label : nearSpot.label;
+    act.classList.toggle('soon', nearSpot.kind === 'soon');
+  }
+  act.classList.toggle('on', !!nearSpot);
+  if (spot && !P.onFoot && !toldGetOff) { toldGetOff = true; toast('Mind Games: get off your bike to play'); }
+  if (!spot) toldGetOff = false;
+  $('walkBtn').classList.toggle('on', G.state === 'play' && !intro && !hero);
+}
+
 function updateStars(t, dt) {
   if (WRAP) {
     MON.x = nearest(MON_HOME.x, P.x); MON.z = nearest(MON_HOME.z, P.z);
@@ -1003,6 +1169,7 @@ function updateGuide(t) {
 
 // ---------- camera ----------
 const camPos = new THREE.Vector3(0, 40, 0);
+const mindCam = new THREE.Vector3(), mindLook = new THREE.Vector3();
 const lookAt = new THREE.Vector3();
 let camYaw = Math.PI; // direction the camera follows
 let viewYaw = Math.PI; // direction it actually looks, after the player's own rotation
@@ -1068,27 +1235,38 @@ function updateCamera(t, dt) {
     return;
   }
   if (intro) return introCamera(dt);
-  // follow the direction of travel, so spins in the air stay visible
+  if (mind?.active()) {
+    // square on to the game table
+    mind.cameraPose(mindCam, mindLook);
+    camPos.x = damp(camPos.x, mindCam.x, 4, dt); camPos.y = damp(camPos.y, mindCam.y, 4, dt); camPos.z = damp(camPos.z, mindCam.z, 4, dt);
+    lookAt.x = damp(lookAt.x, mindLook.x, 5, dt); lookAt.y = damp(lookAt.y, mindLook.y, 5, dt); lookAt.z = damp(lookAt.z, mindLook.z, 5, dt);
+    camera.position.copy(camPos);
+    camera.lookAt(lookAt);
+    return;
+  }
+  // follow the direction of travel, so spins in the air stay visible; on foot, only while
+  // walking away from the camera (otherwise walking sideways would swing the view round and round)
   const target = P.grounded || Math.hypot(P.vx, P.vz) < 2 ? P.yaw : Math.atan2(P.vx, P.vz);
   let diff = target - camYaw;
   diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-  camYaw += diff * (1 - Math.exp(-5 * dt));
+  if (!P.onFoot || P.camFollow) camYaw += diff * (1 - Math.exp(-(P.onFoot ? 2.5 : 5) * dt));
   // the player's rotation eases away once they let go and the bike is moving
   if (!orbit.dragging) {
     orbit.idle += dt;
-    if (orbit.idle > 2 && Math.abs(P.speed) > 3) {
+    if (orbit.idle > 2 && Math.abs(P.speed) > 3 && !P.onFoot) {
       orbit.yaw = Math.atan2(Math.sin(orbit.yaw), Math.cos(orbit.yaw)); // take the short way back
       orbit.yaw = damp(orbit.yaw, 0, 2.5, dt);
       orbit.pitch = damp(orbit.pitch, 0, 2.5, dt);
     }
   }
   viewYaw = camYaw + orbit.yaw;
-  let back = (8.5 + Math.abs(P.speed) * 0.06) * orbit.zoom;
+  let back = (P.onFoot ? 5.2 : 8.5 + Math.abs(P.speed) * 0.06) * orbit.zoom;
+  const camH = P.onFoot ? 2.1 : 2.7;
   const want = new THREE.Vector3();
   for (; back > 1.5; back -= 1) {
     // pull the camera in rather than let it sit inside a building
     const flat = back * Math.cos(orbit.pitch);
-    want.set(P.x - Math.sin(viewYaw) * flat, P.y + 2.7 + back * Math.sin(orbit.pitch), P.z - Math.cos(viewYaw) * flat);
+    want.set(P.x - Math.sin(viewYaw) * flat, P.y + camH + back * Math.sin(orbit.pitch), P.z - Math.cos(viewYaw) * flat);
     if (!W.blocked?.(want.x, want.y, want.z)) break;
   }
   camPos.x = damp(camPos.x, want.x, 8, dt);
@@ -1097,8 +1275,8 @@ function updateCamera(t, dt) {
   camPos.y = Math.max(camPos.y, heightAt(camPos.x, camPos.z) + 1.4);
   camera.position.copy(camPos);
   // look ahead of the bike when following; look at the rider when the view has been turned
-  const ahead = 6 * Math.max(0, 1 - (Math.abs(orbit.yaw) + Math.abs(orbit.pitch)) / 0.8);
-  lookAt.set(P.x + Math.sin(viewYaw) * ahead, P.y + 1.6 + ahead / 6, P.z + Math.cos(viewYaw) * ahead);
+  const ahead = (P.onFoot ? 3 : 6) * Math.max(0, 1 - (Math.abs(orbit.yaw) + Math.abs(orbit.pitch)) / 0.8);
+  lookAt.set(P.x + Math.sin(viewYaw) * ahead, P.y + (P.onFoot ? 1.3 : 1.6) + ahead / 6, P.z + Math.cos(viewYaw) * ahead);
   camera.lookAt(lookAt);
 }
 
@@ -1262,6 +1440,23 @@ $('credit').textContent = shownCredit;
 const hero = W.makeHero ? W.makeHero({ scene, P, keys, G, toast, tone }) : null;
 if (hero) bike.root.visible = false;
 
+// ---------- mind games ----------
+// A chapter with a MIND spot has the pavilion; the title screen's Mind Games link starts there on foot.
+const SPOT_MIND = query.get('spot') === 'mind' && !!W.MIND;
+const mind = W.MIND ? createMindGames({
+  scene, at: W.MIND, camera, renderer, composer, me: net.me, tone, toast,
+  onLeave() {
+    G.state = 'play';
+    walker.root.visible = P.onFoot;
+    $('hud').classList.add('on');
+    camYaw = P.yaw;
+    orbit.yaw = orbit.pitch = 0;
+  },
+}) : null;
+$('walkBtn').addEventListener('click', (e) => { toggleFoot(); e.currentTarget.blur(); });
+$('actBtn').addEventListener('click', (e) => { interact(); e.currentTarget.blur(); });
+if (SPOT_MIND) { $('chMind').classList.add('active'); $('ch3').classList.remove('active'); }
+
 // ---------- main loop ----------
 document.title = INFO.title;
 $('title').textContent = INFO.title;
@@ -1287,6 +1482,8 @@ function tick(dt, t) {
     if (!intro) G.time -= dt; // the night starts once we're through the painting
     if (G.time <= 0) endGame();
   }
+  if (G.state === 'play' || G.state === 'mind') mind?.update(dt, t);
+  updateSpots();
   updateStars(t, dt);
   updateOthers(dt);
   updateLive();
