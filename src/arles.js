@@ -964,3 +964,5 @@ export function buildWorld(scene) {
 
 // for tests and debugging
 export { stalls, zones };
+// paint helpers shared with other chapters
+export { strokeTexture, spotTexture, tint };

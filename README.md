@@ -10,6 +10,8 @@ Each chapter turns a real artwork into a small 3D city you can explore. Somethin
 
 **Chapter 2: Café Terrace at Night** (Vincent van Gogh, 1888). The streets of Arles, painted in thick brush strokes under a swirling night sky. Gather the fallen stars and carry them to the glowing café, and watch each one return to the sky. Guests sit at the café tables, market stalls line the square and some streets, and people stop to talk. The town has no wall: its streets fade into dark fields of cypresses, and a rider who wanders out is turned gently back.
 
+**Chapter 3: The Water Lily Pond** (Claude Monet, 1899). Monet's garden at Giverny on a summer day: the lily pond with its green Japanese footbridge under wisteria, weeping willows, long beds of flowers, an avenue of rose arches and the pink house with green shutters. Gather the loose flowers and carry them to the house, and watch the water lilies open on the pond.
+
 Every ride opens on the original painting and flies into it. The bike rolls along gently by itself: steer it, pedal to go faster, and press down to stop.
 
 **Live riders.** Other people playing at the same moment appear on the streets on their own coloured bikes, each with a guest name, and the game shows how many are riding right now. Runs in any modern browser, on desktop or phone.
@@ -35,13 +37,13 @@ npm install
 npm run dev
 ```
 
-Open the address it prints. Choose a chapter on the title screen, or add `?chapter=2` to the address.
+Open the address it prints. Choose a chapter on the title screen, or add `?chapter=2` or `?chapter=3` to the address.
 
 `npm run build` writes a static site to `dist/` that can be hosted anywhere. Every push to `main` publishes it to GitHub Pages automatically (see `.github/workflows/pages.yml`).
 
 ## Made with
 
-[Three.js](https://threejs.org) and [Vite](https://vitejs.dev). The cities, people, music and sound are all generated in code; the only image files are the two paintings.
+[Three.js](https://threejs.org) and [Vite](https://vitejs.dev). The cities, people, music and sound are all generated in code; the only image files are the three paintings.
 
 ## Live riders
 
@@ -49,4 +51,4 @@ There is no game server. Each browser sends its rider's position a few times a s
 
 ## Paintings
 
-`public/castle-and-sun.jpg` (Paul Klee, *Castle and Sun*, 1928) and `public/cafe-terrace-at-night.jpg` (Vincent van Gogh, *Café Terrace at Night*, 1888) are public-domain reproductions from Wikimedia Commons.
+`public/castle-and-sun.jpg` (Paul Klee, *Castle and Sun*, 1928), `public/cafe-terrace-at-night.jpg` (Vincent van Gogh, *Café Terrace at Night*, 1888) and `public/water-lily-pond.jpg` (Claude Monet, *Bridge over a Pond of Water Lilies*, 1899, The Metropolitan Museum of Art) are public-domain reproductions from Wikimedia Commons.

@@ -8,14 +8,16 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import * as valley from './world.js';
 import * as city from './city.js';
 import * as arles from './arles.js';
+import * as giverny from './giverny.js';
 import { TIP_URL, TIP_LABEL } from './support.js';
 import { createNet } from './net.js';
 
 // The painted city is the default world; add ?world=valley to ride the Himalayan valley.
-// Chapter 1 is the Klee city, chapter 2 is Van Gogh's Arles (?chapter=2).
+// Chapter 1 is the Klee city, chapter 2 is Van Gogh's Arles (?chapter=2), chapter 3 is Monet's garden (?chapter=3).
 const query = new URLSearchParams(location.search);
-const CHAPTER = [1, 2].includes(Number(query.get('chapter'))) ? Number(query.get('chapter')) : 1;
-const W = query.get('world') === 'valley' ? valley : CHAPTER === 2 ? arles : city;
+const CHAPTERS = 3;
+const CHAPTER = [1, 2, 3].includes(Number(query.get('chapter'))) ? Number(query.get('chapter')) : 1;
+const W = query.get('world') === 'valley' ? valley : CHAPTER === 3 ? giverny : CHAPTER === 2 ? arles : city;
 const BEST_KEY = 'paletterider-best' + (W.INFO.id ? '-' + W.INFO.id : '');
 const HELP_KEY = 'paletterider-help';
 try {
@@ -733,8 +735,8 @@ if (W !== valley) {
   $('chapters').classList.add('on');
   $('ch' + CHAPTER).classList.add('active');
   $('nextCh').classList.add('on');
-  $('nextCh').href = `?chapter=${(CHAPTER % 2) + 1}`;
-  $('nextCh').textContent = CHAPTER === 2 ? '‹ Back to chapter 1' : `Go to chapter ${CHAPTER + 1} ›`;
+  $('nextCh').href = `?chapter=${(CHAPTER % CHAPTERS) + 1}`;
+  $('nextCh').textContent = CHAPTER === CHAPTERS ? '‹ Back to chapter 1' : `Go to chapter ${CHAPTER + 1} ›`;
 }
 $('again').onclick = startGame;
 
@@ -1316,5 +1318,5 @@ function frame() {
 renderer.setAnimationLoop(frame);
 
 // handy for testing from the console
-window.__aurora = { begin, net, others, INTRO, introState: () => intro, setPaused, hero, sim: (n, dt = 1 / 60) => { for (let i = 0; i < n; i++) tick(dt, clock.elapsedTime + i * dt); }, P, G, keys, stars, W, orbit, music, startGame, endGame, audioState: () => actx?.state };
+window.__aurora = { begin, draw: () => composer.render(), net, others, INTRO, introState: () => intro, setPaused, hero, sim: (n, dt = 1 / 60) => { for (let i = 0; i < n; i++) tick(dt, clock.elapsedTime + i * dt); }, P, G, keys, stars, W, orbit, music, startGame, endGame, audioState: () => actx?.state };
 
