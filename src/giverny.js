@@ -634,10 +634,10 @@ export function drawMap(g, S) {
   box(MON.x - 13, MON.x + 13, MON.z - 5, MON.z + 3);
   g.fillStyle = '#7a86a0';
   box(MON.x - 13, MON.x + 13, MON.z - 5, MON.z - 3);
-  // the Mind Games pavilion: a white square with a violet puzzle badge
-  g.fillStyle = '#fbf8f2';
+  // the Mind Games pavilion: a timber square with a green puzzle badge
+  g.fillStyle = '#a56b3c';
   box(MIND.x - 6, MIND.x + 6, MIND.z - 7, MIND.z + 7);
-  g.fillStyle = '#7a4fc8';
+  g.fillStyle = '#2f7a52';
   g.beginPath(); g.arc(c + MIND.x * k, c + MIND.z * k, 17, 0, Math.PI * 2); g.fill();
   g.strokeStyle = '#ffffff'; g.lineWidth = 3; g.stroke();
   g.font = '20px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';

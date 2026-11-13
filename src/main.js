@@ -1044,7 +1044,7 @@ function toggleFoot() {
 let nearSpot = null, toldGetOff = false;
 function interact() {
   if (!nearSpot || G.state !== 'play') return;
-  if (nearSpot.kind === 'hanoi') {
+  if (nearSpot.kind === 'hanoi' || nearSpot.kind === 'slide') {
     if (!P.onFoot) { toggleFoot(); return; } // get off first, then step up to the table
     for (const k in keys) keys[k] = false;
     keys.ax = keys.ay = 0;
@@ -1052,7 +1052,7 @@ function interact() {
     G.state = 'mind';
     $('hud').classList.remove('on');
     walker.root.visible = false; // out of the way of the table view
-    mind.open();
+    mind.open(nearSpot.kind);
   } else if (nearSpot.kind === 'soon') toast(nearSpot.label);
 }
 function updateWalker(dt) {
@@ -1087,7 +1087,8 @@ function updateSpots() {
   nearSpot = spot && spot.kind !== 'pavilion' ? spot : null;
   const act = $('actBtn');
   if (nearSpot) {
-    $('actLabel').textContent = nearSpot.kind === 'hanoi' && !P.onFoot ? '🚶 Get off to play' : nearSpot.kind === 'hanoi' ? '🧩 ' + nearSpot.label : nearSpot.label;
+    const game = nearSpot.kind === 'hanoi' || nearSpot.kind === 'slide';
+    $('actLabel').textContent = game && !P.onFoot ? '🚶 Get off to play' : game ? (nearSpot.kind === 'slide' ? '🖼️ ' : '🧩 ') + nearSpot.label : nearSpot.label;
     act.classList.toggle('soon', nearSpot.kind === 'soon');
   }
   act.classList.toggle('on', !!nearSpot);
@@ -1515,5 +1516,5 @@ function frame() {
 renderer.setAnimationLoop(frame);
 
 // handy for testing from the console
-window.__aurora = { begin, draw: () => composer.render(), net, others, INTRO, introState: () => intro, setPaused, hero, sim: (n, dt = 1 / 60) => { for (let i = 0; i < n; i++) tick(dt, clock.elapsedTime + i * dt); }, P, G, keys, stars, W, orbit, music, startGame, endGame, audioState: () => actx?.state };
+window.__aurora = { mind: () => mind, begin, draw: () => composer.render(), net, others, INTRO, introState: () => intro, setPaused, hero, sim: (n, dt = 1 / 60) => { for (let i = 0; i < n; i++) tick(dt, clock.elapsedTime + i * dt); }, P, G, keys, stars, W, orbit, music, startGame, endGame, audioState: () => actx?.state };
 
