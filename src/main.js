@@ -42,6 +42,19 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const damp = (cur, target, rate, dt) => cur + (target - cur) * (1 - Math.exp(-rate * dt));
 const $ = (id) => document.getElementById(id);
 
+// ---------- the visible screen ----------
+// On a phone, a full-screen layer is sized as if the browser's address and tool bars were not
+// there, so its bottom (the title screen's Ride button) hides behind them. Measure what is
+// really visible and size the page and its screens to that, again whenever the bars move.
+function fitScreen() {
+  const h = Math.round(window.visualViewport?.height || innerHeight);
+  document.documentElement.style.setProperty('--app-h', `${h}px`);
+}
+fitScreen();
+addEventListener('resize', fitScreen);
+addEventListener('orientationchange', () => setTimeout(fitScreen, 300));
+window.visualViewport?.addEventListener('resize', fitScreen);
+
 // ---------- renderer ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));

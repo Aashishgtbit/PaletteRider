@@ -16,7 +16,8 @@
         --panel: rgba(6, 16, 28, 0.62);
       }
       * { box-sizing: border-box; }
-      html, body { margin: 0; height: 100%; overflow: hidden; background: #02060c; }
+      /* --app-h is the part of the screen actually visible (set by main.js); on phones it excludes the browser's own bars */
+      html, body { margin: 0; height: var(--app-h, 100%); overflow: hidden; background: #02060c; }
       body { font-family: Georgia, 'Times New Roman', serif; color: var(--ink); }
       canvas { display: block; }
 
@@ -183,7 +184,7 @@
       /* full-screen screens (title, pause, end): scroll when they are taller than the screen,
          as on a phone, while the ride itself keeps all touches for its own controls */
       .overlay {
-        position: fixed; inset: 0; display: none; justify-content: center;
+        position: fixed; top: 0; left: 0; right: 0; height: var(--app-h, 100dvh); display: none; justify-content: center;
         background: radial-gradient(ellipse at center, rgba(2, 8, 16, 0.35), rgba(2, 8, 16, 0.85));
         text-align: center; padding: 24px; padding-bottom: calc(24px + env(safe-area-inset-bottom));
         overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y;
@@ -398,6 +399,19 @@
         .mg-seg img { display: none; }
         #mindRef { width: 38px; height: 38px; }
         #mindRefBox small { display: none; }
+      }
+      /* phones: the title screen compact enough that its button usually fits without scrolling */
+      @media (max-width: 480px), (max-height: 700px) {
+        #painting { height: min(30vh, 62vw); }
+        #menu.gallery #frame { margin-bottom: 10px; }
+        #menu.gallery h1 { font-size: 26px; }
+        #menu.gallery .sub { margin: 4px 0 6px; font-size: 10px; letter-spacing: 0.14em; }
+        #menuLive { margin-bottom: 8px; font-size: 11px; }
+        #menu.gallery .how { font-size: 13px; line-height: 1.45; margin-bottom: 12px; }
+        #chapters { gap: 6px; margin-bottom: 10px; }
+        #chapters a { padding: 6px 10px; font-size: 10.5px; letter-spacing: 0.08em; }
+        #menu #start { padding: 13px 26px; font-size: 14px; }
+        #menu .hint { margin-top: 8px; }
       }
     </style>
   </head>
