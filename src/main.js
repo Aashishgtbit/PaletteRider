@@ -385,7 +385,8 @@ if (INFO.spawn) Object.assign(P, INFO.spawn);
 const G = { state: 'menu', score: 0, carried: 0, delivered: 0, tricks: 0, time: NIGHT_SECONDS, best: 0 };
 try { G.best = Number(localStorage.getItem(BEST_KEY)) || 0; } catch { /* private mode */ }
 
-const keys = { up: false, down: false, left: false, right: false, jump: false, jumpPressed: false };
+// ax / ay: the thumb stick's analog position (-1..1, up is negative); keyboard leaves them at 0
+const keys = { up: false, down: false, left: false, right: false, jump: false, jumpPressed: false, ax: 0, ay: 0, analog: false };
 const KEYMAP = { KeyW: 'up', ArrowUp: 'up', KeyS: 'down', ArrowDown: 'down', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right', Space: 'jump' };
 addEventListener('keydown', (e) => {
   const k = KEYMAP[e.code];
@@ -423,16 +424,31 @@ function setupTouch() {
     const len = Math.hypot(dx, dy);
     if (len > R) { dx *= R / len; dy *= R / len; }
     knob.style.transform = `translate(${dx}px, ${dy}px)`;
-    keys.left = dx < -R * 0.35;
-    keys.right = dx > R * 0.35;
-    keys.up = dy < -R * 0.35;
-    keys.down = dy > R * 0.35;
+    // Analog values with a dead zone in the middle. A push that is mostly sideways counts as
+    // purely sideways (and mostly up as purely up), so a thumb that drifts a little off the
+    // axis doesn't pedal and steer at once and send the bike off diagonally.
+    let nx = dx / R, ny = dy / R;
+    const mag = Math.hypot(nx, ny), DEAD = 0.18;
+    if (mag < DEAD) { nx = ny = 0; } else {
+      const k = (mag - DEAD) / (1 - DEAD) / mag;
+      nx *= k; ny *= k;
+      if (Math.abs(ny) < Math.abs(nx) * 0.45) ny = 0;
+      else if (Math.abs(nx) < Math.abs(ny) * 0.45) nx = 0;
+    }
+    keys.ax = nx; keys.ay = ny;
+    keys.analog = true;
+    keys.left = nx < -0.3;
+    keys.right = nx > 0.3;
+    keys.up = ny < -0.3;
+    keys.down = ny > 0.3;
   };
   const releaseStick = (e) => {
     if (e.pointerId !== stickId) return;
     stickId = null;
     knob.style.transform = '';
     keys.left = keys.right = keys.up = keys.down = false;
+    keys.ax = keys.ay = 0;
+    keys.analog = false;
   };
   stick.addEventListener('pointerdown', (e) => {
     e.preventDefault();
@@ -634,7 +650,15 @@ function collide() {
 function updateRider(dt) {
   const ctl = P.crash <= 0;
   if (!ctl) P.crash -= dt;
-  const steer = ctl ? (keys.left ? 1 : 0) - (keys.right ? 1 : 0) : 0;
+  // The stick steers in proportion to how far it is pushed (gentle near the middle, full at
+  // the edge); keys are all or nothing. Either way the turn eases in and out instead of snapping.
+  const want = !ctl ? 0 : keys.analog
+    ? -Math.sign(keys.ax) * Math.abs(keys.ax) ** 1.5
+    : (keys.left ? 1 : 0) - (keys.right ? 1 : 0);
+  P.steer = damp(P.steer || 0, want, keys.analog ? 9 : 14, dt);
+  const steer = P.steer;
+  const gas = keys.analog ? Math.max(0, -keys.ay) : keys.up ? 1 : 0;
+  const brake = keys.analog ? Math.max(0, keys.ay) : keys.down ? 1 : 0;
   const jumpNow = keys.jumpPressed;
   keys.jumpPressed = false;
 
@@ -643,8 +667,8 @@ function updateRider(dt) {
     const slope = (heightAt(P.x + fx, P.z + fz, P.y) - heightAt(P.x - fx, P.z - fz, P.y)) / 2;
     const ang = Math.atan(slope);
     if (ctl) {
-      if (keys.up) P.speed += 16 * dt;
-      if (keys.down) P.speed -= (P.speed > 0 ? 32 : 8) * dt;
+      P.speed += 16 * gas * dt;
+      P.speed -= (P.speed > 0 ? 32 : 8) * brake * dt;
     }
     P.speed -= 18 * Math.sin(ang) * dt; // hills push back, descents give speed
     P.speed -= P.speed * 0.5 * dt;
@@ -692,7 +716,7 @@ function updateRider(dt) {
   bike.rollG.rotation.z = P.roll;
   const spin = (P.grounded ? P.speed : Math.hypot(P.vx, P.vz)) * dt / 0.38;
   for (const w of bike.wheels) w.rotation.x += spin;
-  if (P.grounded && keys.up && P.crash <= 0) bike.pedal(-spin * 0.4); // legs turn only while pedalling
+  if (P.grounded && gas > 0 && P.crash <= 0) bike.pedal(-spin * 0.4); // legs turn only while pedalling
 }
 
 function updateStars(t, dt) {
