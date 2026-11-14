@@ -14,7 +14,7 @@ Each chapter turns a real artwork into a small 3D city you can explore. Somethin
 
 Every ride opens on the original painting and flies into it. The bike rolls along gently by itself: steer it, pedal to go faster, and press down to stop.
 
-**Mind Games.** Get off your bike anywhere and walk. In Monet's garden, a neon-lit pavilion beside the flower avenue holds the Mind Games: play the Tower of Hanoi against the clock (3 to 7 discs), or put one of the three chapter paintings back together in the Painting Slide puzzle (3×3, 4×4 or 5×5), beat your best time, and share a score card of your solve. A memory game is on the way. Jump straight there with `?chapter=3&spot=mind` or the MIND GAMES button on the title screen.
+**Mind Games.** Get off your bike anywhere and walk. In Monet's garden, a neon-lit pavilion beside the flower avenue holds the Mind Games: play the Tower of Hanoi against the clock (3 to 7 discs), put one of the three chapter paintings back together in the Painting Slide puzzle (3×3, 4×4 or 5×5), or find the pairs of painting details in Memory Match; beat your best time, and share a score card of your solve. Jump straight there with `?chapter=3&spot=mind` or the MIND GAMES button on the title screen.
 
 **Live riders.** Other people playing at the same moment appear on the streets on their own coloured bikes, each with a guest name, and the game shows how many are riding right now. Runs in any modern browser, on desktop or phone.
 

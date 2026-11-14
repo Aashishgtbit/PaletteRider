@@ -629,8 +629,8 @@ function setupTouch() {
     if (mag < DEAD) { nx = ny = 0; } else {
       const k = (mag - DEAD) / (1 - DEAD) / mag;
       nx *= k; ny *= k;
-      if (Math.abs(ny) < Math.abs(nx) * 0.45) ny = 0;
-      else if (Math.abs(nx) < Math.abs(ny) * 0.45) nx = 0;
+      if (Math.abs(ny) < Math.abs(nx) * 0.6) ny = 0; // within ~30° of sideways: pure steering
+      else if (Math.abs(nx) < Math.abs(ny) * 0.6) nx = 0; // within ~30° of up/down: pure pedal/brake
     }
     keys.ax = nx; keys.ay = ny;
     keys.analog = true;
@@ -914,35 +914,28 @@ function updateRider(dt) {
   if (P.crash > 0) P.crash -= dt;
   // The stick steers in proportion to how far it is pushed (gentle near the middle, full at
   // the edge); keys are all or nothing. Either way the turn eases in and out instead of snapping.
-  // On the ground the stick points where to ride: push left and the bike turns to face left of
-  // where it was heading, then rides straight that way (it does not keep circling). The heading it
-  // turns from is fixed while the thumb is off the "up" direction, so the camera swinging round
-  // behind the bike doesn't move the goal. Pulling the stick straight back brakes.
+  // On the ground the stick works like handlebars: sideways turns the bike for as long as it is
+  // held (gently near the middle, firmer at the edge) and letting go rides straight on in the new
+  // direction; up pedals, down brakes. Sideways never pedals, so a turn doesn't also lurch forward,
+  // and the camera stays close behind the bike so the turn reads as the world swinging round, not
+  // as the bike sliding off diagonally.
   let want = 0, gas = 0, brake = 0;
-  const mag = Math.hypot(keys.ax, keys.ay);
+  P.refYaw = null;
   if (!ctl) {
-    P.refYaw = null;
-  } else if (keys.analog && P.grounded && mag > 0) {
-    const ang = Math.atan2(-keys.ax, -keys.ay); // 0 = up, + = left
-    if (Math.abs(ang) > 2.5) {
-      brake = mag;
-      P.refYaw = null;
-    } else {
-      if (P.refYaw == null || Math.abs(ang) < 0.3) P.refYaw = P.yaw; // follow while riding straight
-      let d = P.refYaw + ang - P.yaw;
-      d = Math.atan2(Math.sin(d), Math.cos(d));
-      want = clamp(d * 2.2, -1, 1);
-      gas = mag;
-    }
+    // no control while crashed or flying in
+  } else if (keys.analog && P.grounded) {
+    want = -Math.sign(keys.ax) * Math.abs(keys.ax) ** 1.6 * 0.75;
+    gas = Math.max(0, -keys.ay);
+    brake = Math.max(0, keys.ay);
+    if (keys.ax !== 0) P.parked = false; // steering from a stop rolls off again
   } else {
-    P.refYaw = null;
     want = keys.analog
       ? -Math.sign(keys.ax) * Math.abs(keys.ax) ** 1.5 // in the air: spin with the stick
       : (keys.left ? 1 : 0) - (keys.right ? 1 : 0);
     gas = !keys.analog && keys.up ? 1 : 0;
     brake = !keys.analog && keys.down ? 1 : 0;
   }
-  P.steer = damp(P.steer || 0, want, keys.analog ? 8 : 14, dt);
+  P.steer = damp(P.steer || 0, want, keys.analog ? 6 : 14, dt);
   const steer = P.steer;
   const jumpNow = keys.jumpPressed;
   keys.jumpPressed = false;
@@ -1057,7 +1050,7 @@ function toggleFoot() {
 let nearSpot = null, toldGetOff = false;
 function interact() {
   if (!nearSpot || G.state !== 'play') return;
-  if (nearSpot.kind === 'hanoi' || nearSpot.kind === 'slide') {
+  if (['hanoi', 'slide', 'memory'].includes(nearSpot.kind)) {
     if (!P.onFoot) { toggleFoot(); return; } // get off first, then step up to the table
     for (const k in keys) keys[k] = false;
     keys.ax = keys.ay = 0;
@@ -1100,8 +1093,9 @@ function updateSpots() {
   nearSpot = spot && spot.kind !== 'pavilion' ? spot : null;
   const act = $('actBtn');
   if (nearSpot) {
-    const game = nearSpot.kind === 'hanoi' || nearSpot.kind === 'slide';
-    $('actLabel').textContent = game && !P.onFoot ? '🚶 Get off to play' : game ? (nearSpot.kind === 'slide' ? '🖼️ ' : '🧩 ') + nearSpot.label : nearSpot.label;
+    const game = ['hanoi', 'slide', 'memory'].includes(nearSpot.kind);
+    const icon = { hanoi: '🧩 ', slide: '🖼️ ', memory: '🃏 ' }[nearSpot.kind] || '';
+    $('actLabel').textContent = game && !P.onFoot ? '🚶 Get off to play' : icon + nearSpot.label;
     act.classList.toggle('soon', nearSpot.kind === 'soon');
   }
   act.classList.toggle('on', !!nearSpot);
@@ -1263,7 +1257,7 @@ function updateCamera(t, dt) {
   const target = P.grounded || Math.hypot(P.vx, P.vz) < 2 ? P.yaw : Math.atan2(P.vx, P.vz);
   let diff = target - camYaw;
   diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-  if (!P.onFoot || P.camFollow) camYaw += diff * (1 - Math.exp(-(P.onFoot ? 2.5 : 5) * dt));
+  if (!P.onFoot || P.camFollow) camYaw += diff * (1 - Math.exp(-(P.onFoot ? 2.5 : P.grounded ? 9 : 5) * dt));
   // the player's rotation eases away once they let go and the bike is moving
   if (!orbit.dragging) {
     orbit.idle += dt;

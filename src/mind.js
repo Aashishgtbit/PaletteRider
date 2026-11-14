@@ -7,6 +7,7 @@
 // than the busy painting outside.
 import * as THREE from 'three';
 import { createSlide } from './slide.js';
+import { createMemory } from './memory.js';
 
 // rich and far apart in hue, so neighbouring sizes never look alike against the green felt
 const DISC_COLORS = ['#e0344a', '#f08a2c', '#f4c534', '#3fbf86', '#2f8ee0', '#8a5ad0', '#f4ead6']; // ruby to ivory, like lacquered wood
@@ -22,9 +23,8 @@ const LIFT_Y = BOARD_Y + PEG_H + 0.38; // a lifted disc floats here, clear of th
 const SITE = 'aashishgtbit.github.io/PaletteRider';
 const BEST_KEY = 'paletterider-hanoi-best';
 const SLIDE_AT = { x: -5, z: TABLE_Z }; // the painting slide puzzle, on an easel at the left table
-const SOON = [
-  { x: 5, z: TABLE_Z, name: 'Memory match' },
-];
+const MEMORY_AT = { x: 5, z: TABLE_Z }; // memory match, on a board at the right table
+const SOON = []; // tables for games still to come (none at the moment)
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -299,7 +299,7 @@ export function createMindGames({ scene, at, camera, renderer, composer, me, ton
   // the carved sign over the front: a walnut board with gold letters, readable from the avenue
   box(6.6, 1.5, 0.14, walnut, 0, 4.42, 6.72);
   for (const y of [5.15, 3.69]) box(6.66, 0.05, 0.16, brass, 0, y, 6.72);
-  const sign = new THREE.Mesh(new THREE.PlaneGeometry(6.3, 1.4), new THREE.MeshBasicMaterial({ map: neonTexture(['MIND GAMES', 'TOWER OF HANOI · PAINTING SLIDE']), transparent: true, toneMapped: false }));
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(6.3, 1.4), new THREE.MeshBasicMaterial({ map: neonTexture(['MIND GAMES', 'TOWER OF HANOI · PAINTING SLIDE · MEMORY MATCH']), transparent: true, toneMapped: false }));
   sign.position.set(0, 4.42, 6.8);
   root.add(sign);
   // a tall pole with a green pennant beside it, seen over the flower beds
@@ -365,6 +365,8 @@ export function createMindGames({ scene, at, camera, renderer, composer, me, ton
 
   // ---------- the painting slide puzzle ----------
   const slide = createSlide({ root, at: SLIDE_AT, toWorld, camera, renderer, tone, won, mats: { glow, walnut, oak, brass, GOLD, AMBER, neonTexture, woodTexture } });
+  // ---------- memory match ----------
+  const memory = createMemory({ root, at: MEMORY_AT, toWorld, camera, renderer, tone, won, mats: { glow, walnut, oak, brass, felt, GOLD, AMBER, neonTexture } });
 
   // ---------- the Tower of Hanoi ----------
   const H = { n: 4, pegs: [[], [], []], discs: [], held: null, from: 0, hover: -1, moves: 0, started: false, time: 0, done: false };
@@ -540,7 +542,7 @@ export function createMindGames({ scene, at, camera, renderer, composer, me, ton
   setupHanoi(4);
 
   // ---------- shared by every game: the panel, the clock, best times, the score card ----------
-  const GAMES = { hanoi, slide };
+  const GAMES = { hanoi, slide, memory };
   let game = hanoi, active = false, cardShown = false, doneAt = 0, newBest = false;
   function readBest(g = game) {
     try { return JSON.parse(localStorage.getItem(g.bestKey)) || {}; } catch { return {}; }
@@ -800,6 +802,7 @@ export function createMindGames({ scene, at, camera, renderer, composer, me, ton
     holos.forEach((h, i) => { h.rotation.set(t * 0.4 + i, t * 0.6 + i, 0); h.position.y = 1.55 + Math.sin(t * 1.6 + i * 2) * 0.06; });
     hanoi.update(dt, t);
     slide.update(dt, t);
+    memory.update(dt, t);
     if (!active) return;
     const S = game.S;
     if (S.started && !S.done) S.time += dt; // game time: stops whenever the game does
@@ -840,6 +843,7 @@ export function createMindGames({ scene, at, camera, renderer, composer, me, ton
     }
     hit = pushBox(L, -2.6, 2.6, TABLE_Z - 0.9, TABLE_Z + 0.9) || hit;
     hit = pushBox(L, SLIDE_AT.x - 1.2, SLIDE_AT.x + 1.2, SLIDE_AT.z - 0.55, SLIDE_AT.z + 0.55) || hit;
+    hit = pushBox(L, MEMORY_AT.x - 1.3, MEMORY_AT.x + 1.3, MEMORY_AT.z - 0.55, MEMORY_AT.z + 0.55) || hit;
     for (const s of SOON) hit = pushBox(L, s.x - 0.95, s.x + 0.95, s.z - 0.95, s.z + 0.95) || hit;
     if (hit) Object.assign(P, fromLocalXZ(L.x, L.z));
     return hit;
@@ -850,6 +854,7 @@ export function createMindGames({ scene, at, camera, renderer, composer, me, ton
     const L = toLocal(P.x, P.z);
     if (Math.abs(L.x) < 2.8 && L.z > TABLE_Z && L.z < TABLE_Z + 4.2) return { kind: 'hanoi', label: hanoi.prompt };
     if (Math.abs(L.x - SLIDE_AT.x) < 1.7 && L.z > SLIDE_AT.z && L.z < SLIDE_AT.z + 4) return { kind: 'slide', label: slide.prompt };
+    if (Math.abs(L.x - MEMORY_AT.x) < 1.7 && L.z > MEMORY_AT.z && L.z < MEMORY_AT.z + 4) return { kind: 'memory', label: memory.prompt };
     for (const s of SOON) if (Math.hypot(L.x - s.x, L.z - (s.z + 1.2)) < 1.6) return { kind: 'soon', label: `${s.name}: coming soon` };
     if (Math.abs(L.x) < 7.5 && L.z > -6 && L.z < 9) return { kind: 'pavilion' };
     return null;
