@@ -8,6 +8,7 @@
 import * as THREE from 'three';
 import { createSlide } from './slide.js';
 import { createMemory } from './memory.js';
+import { createArchery } from './archery.js';
 
 // rich and far apart in hue, so neighbouring sizes never look alike against the green felt
 const DISC_COLORS = ['#e0344a', '#f08a2c', '#f4c534', '#3fbf86', '#2f8ee0', '#8a5ad0', '#f4ead6']; // ruby to ivory, like lacquered wood
@@ -187,7 +188,7 @@ function discTopTexture(color, num, radius) {
   return tex;
 }
 
-export function createMindGames({ scene, at, camera, renderer, composer, me, tone, toast, onLeave }) {
+export function createMindGames({ scene, at, archeryAt, camera, renderer, composer, me, tone, toast, onLeave }) {
   // local frame: +z is the open front, -z the back wall. face = the world heading of +z.
   const face = at.face ?? Math.PI / 2;
   const cosF = Math.cos(face), sinF = Math.sin(face);
@@ -542,15 +543,18 @@ export function createMindGames({ scene, at, camera, renderer, composer, me, ton
   setupHanoi(4);
 
   // ---------- shared by every game: the panel, the clock, best times, the score card ----------
-  const GAMES = { hanoi, slide, memory };
+  // the archery range is out on the lawn, not in the pavilion, but keeps score the same way
+  const archery = archeryAt ? createArchery({ scene, at: archeryAt, camera, tone, won, mats: { glow, walnut, oak, brass, GOLD, AMBER, neonTexture } }) : null;
+  const GAMES = { hanoi, slide, memory, ...(archery ? { archery } : {}) };
   let game = hanoi, active = false, cardShown = false, doneAt = 0, newBest = false;
   function readBest(g = game) {
     try { return JSON.parse(localStorage.getItem(g.bestKey)) || {}; } catch { return {}; }
   }
   function showBest() {
     const b = readBest()[game.bestId()];
-    $('mindBest').textContent = b ? fmtTime(b.t) : '—';
-    $('mindBestMoves').textContent = b ? `${b.m} moves` : game.bestSub();
+    const [main, sub] = b ? game.bestText?.(b) ?? [fmtTime(b.t), `${b.m} moves`] : ['—', game.bestSub()];
+    $('mindBest').textContent = main;
+    $('mindBestMoves').textContent = sub;
   }
   // the bar of options under the game: disc count, or grid size and painting
   function renderOptions() {
@@ -593,9 +597,10 @@ export function createMindGames({ scene, at, camera, renderer, composer, me, ton
   function won() {
     doneAt = 1.1;
     const all = readBest(), old = all[game.bestId()];
-    newBest = !old || game.S.time < old.t;
+    const rec = game.record?.() ?? { t: Math.round(game.S.time * 10) / 10, m: game.S.moves };
+    newBest = !old || (game.beats ? game.beats(rec, old) : rec.t < old.t);
     if (newBest) {
-      all[game.bestId()] = { t: Math.round(game.S.time * 10) / 10, m: game.S.moves };
+      all[game.bestId()] = rec;
       try { localStorage.setItem(game.bestKey, JSON.stringify(all)); } catch { /* private mode */ }
     }
     [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => setTimeout(() => tone(f, 1.2, 0.08), i * 120));
@@ -633,12 +638,16 @@ export function createMindGames({ scene, at, camera, renderer, composer, me, ton
     accent.addColorStop(0, '#f6d27e'); accent.addColorStop(1, '#e38a4a');
 
     // header
-    text('PALETTERIDER  ·  MIND GAMES', 64, 92, `600 26px ${MONO}`, '#f4c562', 'left', 3);
+    text(info.header ?? 'PALETTERIDER  ·  MIND GAMES', 64, 92, `600 26px ${MONO}`, '#f4c562', 'left', 3);
     text(info.title, 64, 160, `700 64px ${UI}`, '#ffffff', 'left');
-    round(W - 64 - 196, 104, 196, 58, 29);
+    const badge = info.badge ?? '✓ SOLVED';
+    g.font = `700 24px ${MONO}`; g.letterSpacing = '2px';
+    const badgeW = Math.max(196, g.measureText(badge).width + 56);
+    g.letterSpacing = '0px';
+    round(W - 64 - badgeW, 104, badgeW, 58, 29);
     g.fillStyle = 'rgba(111, 220, 154, 0.14)'; g.fill();
     g.strokeStyle = '#6fdc9a'; g.lineWidth = 2; g.stroke();
-    text('✓ SOLVED', W - 64 - 98, 143, `700 24px ${MONO}`, '#6fdc9a', 'center', 2);
+    text(badge, W - 64 - badgeW / 2, 143, `700 24px ${MONO}`, '#6fdc9a', 'center', 2);
 
     // the game itself, as it looks right now, in a glowing frame
     composer.render();
@@ -662,12 +671,28 @@ export function createMindGames({ scene, at, camera, renderer, composer, me, ton
     g.letterSpacing = '0px';
     round(bx + 24, by + bh - 70, chipW, 46, 23); g.fillStyle = 'rgba(30, 20, 10, 0.8)'; g.fill();
     text(info.chip, bx + 24 + chipW / 2, by + bh - 38, `700 22px ${MONO}`, '#ffffff', 'center', 2);
+    // a row of small discs along the bottom of the picture: every arrow's score, say
+    (info.marks || []).forEach((m, i, all) => {
+      const mx = bx + bw - 24 - 21 - (all.length - 1 - i) * 47, my = by + bh - 47;
+      g.beginPath(); g.arc(mx, my, 21, 0, Math.PI * 2);
+      g.fillStyle = m.bg; g.fill();
+      g.strokeStyle = 'rgba(20, 12, 6, 0.75)'; g.lineWidth = 2.5; g.stroke();
+      text(m.text, mx, my + 8, `700 21px ${MONO}`, m.fg);
+    });
 
     // the time, big
-    text('TIME', W / 2, 790, `600 24px ${MONO}`, 'rgba(250, 232, 205, 0.62)', 'center', 8);
+    const big = info.big ?? { label: 'TIME', value: fmtTime(S.time) };
+    text(big.label, W / 2, 790, `600 24px ${MONO}`, 'rgba(250, 232, 205, 0.62)', 'center', 8);
     g.save();
     g.shadowColor = 'rgba(244, 197, 98, 0.6)'; g.shadowBlur = 36;
-    text(fmtTime(S.time), W / 2, 930, `700 156px ${MONO}`, '#fff6e6', 'center');
+    if (big.suffix) { // a score out of so many: the total smaller, after it
+      g.font = `700 156px ${MONO}`;
+      const vw = g.measureText(big.value).width;
+      g.font = `600 64px ${MONO}`;
+      const x0 = W / 2 - (vw + g.measureText(big.suffix).width + 10) / 2;
+      text(big.value, x0, 930, `700 156px ${MONO}`, '#fff6e6', 'left');
+      text(big.suffix, x0 + vw + 10, 930, `600 64px ${MONO}`, 'rgba(250, 232, 205, 0.62)', 'left');
+    } else text(big.value, W / 2, 930, `700 156px ${MONO}`, '#fff6e6', 'center');
     g.restore();
     if (newBest) {
       round(W / 2 - 200, 960, 400, 54, 27); g.fillStyle = accent; g.fill();
@@ -717,7 +742,7 @@ export function createMindGames({ scene, at, camera, renderer, composer, me, ton
     $('mindSave').classList.toggle('main', !navigator.share); // the lead button when there is no sharing
   }
   const cardBlob = () => new Promise((res) => cardCanvas.toBlob(res, 'image/png'));
-  const fileName = () => `paletterider-${cardInfo.file}-${fmtTime(game.S.time).replace(/[:.]/g, '-')}.png`;
+  const fileName = () => `paletterider-${cardInfo.file}-${cardInfo.fileTag ?? fmtTime(game.S.time).replace(/[:.]/g, '-')}.png`;
   async function saveCard() {
     const blob = await cardBlob();
     const a = document.createElement('a');
@@ -775,9 +800,11 @@ export function createMindGames({ scene, at, camera, renderer, composer, me, ton
     active = true;
     game = GAMES[kind] || hanoi;
     $('mindGameName').textContent = game.name;
+    $('mindSection').textContent = game.section ?? 'MIND GAMES';
     $('mindHint').innerHTML = game.hint;
     game.setup();
     restart();
+    game.enter?.();
     $('mind').classList.add('on');
   }
   function leave() {
@@ -803,12 +830,13 @@ export function createMindGames({ scene, at, camera, renderer, composer, me, ton
     hanoi.update(dt, t);
     slide.update(dt, t);
     memory.update(dt, t);
+    archery?.update(dt, t);
     if (!active) return;
     const S = game.S;
     if (S.started && !S.done) S.time += dt; // game time: stops whenever the game does
     if (S.done && !cardShown && doneAt > 0 && (doneAt -= dt) <= 0) showCard();
     const h = game.hud();
-    $('mindTime').textContent = fmtTime(S.time);
+    $('mindTime').textContent = h.clock ?? fmtTime(S.time);
     $('mindMoves').textContent = h.moves;
     $('mindMinN').textContent = h.max;
     $('mindMovesLabel').textContent = h.label;
@@ -817,7 +845,7 @@ export function createMindGames({ scene, at, camera, renderer, composer, me, ton
     const st = S.done ? 'solved' : S.started ? 'live' : 'ready';
     if ($('mindLive').dataset.s !== st) {
       $('mindLive').dataset.s = st;
-      $('mindLive').textContent = st === 'solved' ? 'SOLVED' : st === 'live' ? 'LIVE' : 'READY';
+      $('mindLive').textContent = st === 'solved' ? game.doneWord ?? 'SOLVED' : st === 'live' ? 'LIVE' : 'READY';
       $('mind').classList.toggle('playing', st !== 'ready');
     }
   }
@@ -834,6 +862,7 @@ export function createMindGames({ scene, at, camera, renderer, composer, me, ton
     return true;
   }
   function pushOut(P) {
+    if (archery?.pushOut(P)) return true;
     if (Math.abs(P.x - at.x) > 12 || Math.abs(P.z - at.z) > 12 || P.y > 5) return false;
     const L = toLocal(P.x, P.z);
     let hit = pushBox(L, -7.3, 7.3, -6.3, -5.8);
@@ -850,6 +879,8 @@ export function createMindGames({ scene, at, camera, renderer, composer, me, ton
   }
   // what the player is standing next to, if anything
   function near(P) {
+    const range = archery?.near(P);
+    if (range) return range;
     if (Math.abs(P.x - at.x) > 12 || Math.abs(P.z - at.z) > 12) return null;
     const L = toLocal(P.x, P.z);
     if (Math.abs(L.x) < 2.8 && L.z > TABLE_Z && L.z < TABLE_Z + 4.2) return { kind: 'hanoi', label: hanoi.prompt };
@@ -860,7 +891,11 @@ export function createMindGames({ scene, at, camera, renderer, composer, me, ton
     return null;
   }
   // a good place to stand when arriving by the title screen's Mind Games button
-  const doorway = () => ({ ...fromLocalXZ(0, 9.5), yaw: face + Math.PI });
+  const doorway = (spot) => {
+    if (spot === 'archery' && archery) return archery.doorway();
+    const beside = { hanoi: [0, 0.4], slide: [SLIDE_AT.x, 0.3], memory: [MEMORY_AT.x, 0.3] }[spot]; // in front of that game
+    return { ...fromLocalXZ(...(beside || [0, 9.5])), yaw: face + Math.PI };
+  };
 
   return { open, leave, update, cameraPose, pushOut, near, doorway, active: () => active, games: GAMES, game: () => game };
 }

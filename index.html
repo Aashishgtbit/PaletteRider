@@ -200,15 +200,12 @@
       .how .note { display: inline-block; margin-top: 10px; font-size: 12px; color: var(--dim); }
       .how a { color: var(--gold); }
 
-      /* chapter picker */
-      #chapters { display: none; justify-content: center; gap: 10px; margin: 0 0 16px; flex-wrap: wrap; }
-      #chapters.on { display: flex; }
-      #chapters a, #nextCh {
+      /* the way on to the next chapter, on the end screen */
+      #nextCh {
         pointer-events: auto; text-decoration: none; color: var(--dim); font-size: 12px; letter-spacing: 0.12em;
         padding: 7px 14px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.22); background: rgba(0, 0, 0, 0.25);
       }
-      #chapters a:hover, #nextCh:hover { color: var(--ink); border-color: var(--glow); }
-      #chapters a.active { color: #06121c; background: var(--glow); border-color: var(--glow); }
+      #nextCh:hover { color: var(--ink); border-color: var(--glow); }
       #nextCh { display: none; margin-top: 16px; }
       .textlink { display: inline-block; margin-top: 18px; color: var(--dim); font-size: 12px; letter-spacing: 0.12em; pointer-events: auto; }
       .textlink:hover { color: var(--ink); }
@@ -400,6 +397,66 @@
         #mindRef { width: 38px; height: 38px; }
         #mindRefBox small { display: none; }
       }
+      /* home screen: the painting and the way in on top; under it, everything there is to play */
+      #tagline { display: none; font: 600 11px ui-sans-serif, system-ui, sans-serif; letter-spacing: 0.26em; text-transform: uppercase; color: var(--gold); margin-bottom: 10px; }
+      #menu.gallery #tagline { display: block; }
+      #catalog { display: none; }
+      #menu.gallery #quick { justify-content: center; }
+      #menu.gallery #catalog { display: block; margin-top: 26px; text-align: left; }
+      .cat-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; margin: 24px 0 12px; padding-bottom: 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.14); }
+      .cat-head b { font: 600 12px ui-sans-serif, system-ui, sans-serif; letter-spacing: 0.24em; color: var(--ink); }
+      .cat-head span { font-size: 13px; font-style: italic; color: var(--dim); }
+      .cat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+      .cat-card {
+        position: relative; display: block; overflow: hidden; pointer-events: auto; text-decoration: none; color: var(--ink);
+        border-radius: 14px; border: 1px solid rgba(255, 255, 255, 0.13); background: rgba(255, 255, 255, 0.05);
+        transition: transform 0.18s, border-color 0.18s, background 0.18s;
+      }
+      .cat-card:hover { transform: translateY(-3px); border-color: var(--glow); background: rgba(255, 255, 255, 0.09); }
+      .cat-card.active { border-color: var(--glow); box-shadow: 0 0 0 1px var(--glow), 0 12px 30px rgba(0, 0, 0, 0.4); }
+      .cat-card.active::after {
+        content: 'SELECTED'; position: absolute; top: 8px; right: 8px; padding: 4px 8px; border-radius: 999px;
+        font: 700 9px ui-sans-serif, system-ui, sans-serif; letter-spacing: 0.16em; background: var(--glow); color: #06121c;
+      }
+      .cat-card img { display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: cover; }
+      /* the games, small, right under the button, so they are seen without scrolling */
+      #quick { display: none; }
+      #menu.gallery #quick { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 18px; justify-content: inherit; }
+      #quick span { font: 600 10px ui-sans-serif, system-ui, sans-serif; letter-spacing: 0.22em; color: var(--dim); margin-right: 2px; }
+      #quick a {
+        pointer-events: auto; text-decoration: none; color: var(--ink); font: 13px ui-sans-serif, system-ui, sans-serif; white-space: nowrap;
+        padding: 6px 12px 6px 9px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.28);
+      }
+      #quick a:hover, #quick a.active { border-color: var(--glow); background: rgba(255, 255, 255, 0.1); }
+      .cat-body { padding: 11px 13px 13px; }
+      .cat-card small { display: block; margin-bottom: 4px; font: 600 10px ui-sans-serif, system-ui, sans-serif; letter-spacing: 0.2em; color: var(--gold); }
+      .cat-card b { display: block; font-weight: normal; font-size: 17px; line-height: 1.2; }
+      .cat-card i { display: block; margin-top: 3px; font: 12px ui-sans-serif, system-ui, sans-serif; font-style: normal; color: var(--dim); }
+      .cat-card p { margin: 8px 0 0; font: 13px/1.4 ui-sans-serif, system-ui, sans-serif; color: var(--dim); }
+      .cat-card.game { display: flex; align-items: center; gap: 12px; padding: 12px; }
+      .cat-card.game .ico {
+        flex: none; display: grid; place-items: center; width: 52px; height: 52px; border-radius: 12px; font-size: 27px;
+        background: linear-gradient(135deg, #7a4e2e, #3a2414); box-shadow: inset 0 0 0 1px rgba(255, 210, 122, 0.4);
+      }
+      .cat-card.game .cat-body { padding: 0; min-width: 0; }
+      .cat-card.game.active::after { top: auto; bottom: 6px; }
+      .cat-foot { margin: 22px 0 6px; text-align: center; font: 12px ui-sans-serif, system-ui, sans-serif; color: var(--dim); }
+      @media (min-width: 900px) {
+        /* wide screens: the painting on the left, the words and the button beside it */
+        #menu.gallery .card { max-width: 1040px; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 48px; align-items: center; }
+        #menu.gallery #frame { margin-bottom: 0; }
+        #menu.gallery #heroText { text-align: left; }
+        #menu.gallery #quick { justify-content: flex-start; }
+        #menu.gallery #catalog { grid-column: 1 / -1; }
+        #painting { height: min(42vh, 400px); }
+      }
+      @media (max-width: 760px) {
+        .cat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+      }
+      @media (max-width: 480px) {
+        .cat-grid.games { grid-template-columns: 1fr; }
+        .cat-card.game .ico { width: 44px; height: 44px; font-size: 23px; }
+      }
       /* phones: the title screen compact enough that its button usually fits without scrolling */
       @media (max-width: 480px), (max-height: 700px) {
         #painting { height: min(30vh, 62vw); }
@@ -408,8 +465,12 @@
         #menu.gallery .sub { margin: 4px 0 6px; font-size: 10px; letter-spacing: 0.14em; }
         #menuLive { margin-bottom: 8px; font-size: 11px; }
         #menu.gallery .how { font-size: 13px; line-height: 1.45; margin-bottom: 12px; }
-        #chapters { gap: 6px; margin-bottom: 10px; }
-        #chapters a { padding: 6px 10px; font-size: 10.5px; letter-spacing: 0.08em; }
+        #tagline { font-size: 9.5px; letter-spacing: 0.2em; margin-bottom: 6px; }
+        #menu.gallery #catalog { margin-top: 16px; }
+        .cat-head { margin: 18px 0 10px; }
+        .cat-card b { font-size: 15px; }
+        .cat-card p { font-size: 12px; }
+        .cat-body { padding: 9px 10px 11px; }
         #menu #start { padding: 13px 26px; font-size: 14px; }
         #menu .hint { margin-top: 8px; }
       }
@@ -483,7 +544,7 @@
 
     <div id="mind">
       <div id="mindTop" class="mg-glass">
-        <div class="mt-game"><small>MIND GAMES</small><b id="mindGameName">Tower of Hanoi</b></div>
+        <div class="mt-game"><small id="mindSection">MIND GAMES</small><b id="mindGameName">Tower of Hanoi</b></div>
         <div id="mindRefBox"><small>GOAL</small><img id="mindRef" alt="The finished painting" /></div>
         <div class="mt-clock"><span id="mindLive" data-s="ready">READY</span><b id="mindTime">0:00.0</b></div>
         <div><small id="mindMovesLabel">MOVES</small><b><span id="mindMoves">0</span><i> / <span id="mindMinN">15</span></i></b><div class="mt-bar"><div id="mindBarFill"></div></div></div>
@@ -515,17 +576,21 @@
     <div class="overlay on" id="menu">
       <div class="card">
         <div id="frame"><img id="painting" alt="" /></div>
-        <h1 id="title">PaletteRider</h1>
-        <div class="sub" id="subtitle">A night ride in the high Himalaya</div>
-        <div id="menuLive"></div>
-        <div id="chapters"><a id="ch1" href="?chapter=1">1 · CASTLE AND SUN</a><a id="ch2" href="?chapter=2">2 · CAFÉ TERRACE AT NIGHT</a><a id="ch3" href="?chapter=3">3 · THE WATER LILY POND</a><a id="chMind" href="?chapter=3&amp;spot=mind">🧩 MIND GAMES</a></div>
-        <p class="how" id="how">
-          Stars have fallen into the valley. Gather them on your bicycle and carry them up to the
-          <em>monastery</em> before dawn. The more you bring in one trip, the bigger the bonus —
-          but land a jump badly and you spill half of them.
-        </p>
-        <button id="start">Begin the ride</button>
-        <div class="hint">or press Enter</div>
+        <div id="heroText">
+          <div class="eyebrow" id="tagline">Ride a bicycle into famous paintings</div>
+          <h1 id="title">PaletteRider</h1>
+          <div class="sub" id="subtitle">A night ride in the high Himalaya</div>
+          <div id="menuLive"></div>
+          <p class="how" id="how">
+            Stars have fallen into the valley. Gather them on your bicycle and carry them up to the
+            <em>monastery</em> before dawn. The more you bring in one trip, the bigger the bonus —
+            but land a jump badly and you spill half of them.
+          </p>
+          <button id="start">Begin the ride</button>
+          <div class="hint">or press Enter</div>
+          <div id="quick"></div>
+        </div>
+        <div id="catalog"></div>
       </div>
     </div>
 

@@ -10,7 +10,7 @@ export const INFO = {
   title: 'PaletteRider',
   sub: 'Chapter 3 · Claude Monet · The Water Lily Pond · 1899',
   how: 'Monet\'s garden is in full bloom. Gather the loose flowers on your bicycle and carry them up to the <em>pink house</em> before dusk, and watch the water lilies open on the pond. Ride over the green bridges, under the rose arches and round the willows. The more you bring in one trip, the bigger the bonus — but land a jump badly and you spill half of them.',
-  brief: 'Collect the flowers and carry them to the pink house before dusk. Left of the avenue is the 🧩 Mind Games pavilion: get off your bike and walk in to play.',
+  brief: 'Collect the flowers and carry them to the pink house before dusk. Left of the avenue is the 🧩 Mind Games pavilion and right of it the 🏹 archery range: get off your bike and walk in to play.',
   painting: { file: 'water-lily-pond.jpg', alt: 'The Water Lily Pond (Bridge over a Pond of Water Lilies), a painting by Claude Monet, 1899', button: 'Ride into the painting' },
   goal: 'HOUSE',
   item: 'flower',
@@ -32,6 +32,8 @@ export const LAMP_COUNT = 24; // water lilies that open as flowers are delivered
 export const MAP_SPAN = 340;
 // the Mind Games pavilion (see mind.js), on the lawn west of the flower beds, its open front facing the avenue
 export const MIND = { x: -68, z: -67, face: Math.PI / 2 };
+// the archery range (see archery.js), on the east lawn: the archer stands here and shoots east, away from the garden
+export const ARCHERY = { x: 64, z: -33, face: -Math.PI / 2 };
 
 const smoothRand = (seed) => () => {
   seed |= 0; seed = (seed + 0x6d2b79f5) | 0;
@@ -126,6 +128,7 @@ export function starSpot() {
     const a = Math.random() * Math.PI * 2, d = 30 + Math.random() * 105;
     p = { x: Math.cos(a) * d, z: Math.sin(a) * d };
     if (inPond(p.x, p.z) < 1.25 || Math.hypot(p.x - MIND.x, p.z - MIND.z) < 13) return null;
+    if (p.x > ARCHERY.x - 10 && p.x < ARCHERY.x + 34 && Math.abs(p.z - ARCHERY.z) < 8) return null; // not on the range
   }
   if (onBridge(p.x, p.z, 1)) return null;
   return { ...p, y: heightAt(p.x, p.z) + 1.2, high: false };
@@ -163,6 +166,7 @@ function buildGround(scene) {
   for (const side of [-1, 1]) for (let i = 1; i <= 5; i++) strip(side * (3.5 + 9 * i) - 1.5, side * (3.5 + 9 * i) + 1.5, -100, 0);
   for (const z of [-67, -33, 3]) strip(-50, 50, z - 3, z + 3);
   strip(-58, -50, -70, -64); // on to the Mind Games pavilion
+  strip(50, 59, -36, -30); // and to the archery range
   strip(-120, 120, 12, 17); // the lane between the two gardens
   for (const b of BRIDGES) { strip(b.x - 2, b.x + 2, 17, POND.z - b.half + 1); strip(b.x - 2, b.x + 2, POND.z + b.half - 1, 104); }
   strip(-70, 70, 102, 106);
@@ -620,6 +624,7 @@ export function drawMap(g, S) {
   box(-3, 3, -104, 36);
   for (const z of [-67, -33, 3]) box(-50, 50, z - 2.5, z + 2.5);
   box(-58, -50, -69.5, -64.5);
+  box(50, 59, -35.5, -30.5);
   box(-120, 120, 12, 17);
   box(-70, 70, 102, 106);
   g.strokeStyle = '#e6d2b0'; g.lineWidth = 5 * k;
@@ -642,6 +647,13 @@ export function drawMap(g, S) {
   g.strokeStyle = '#ffffff'; g.lineWidth = 3; g.stroke();
   g.font = '20px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
   g.fillText('🧩', c + MIND.x * k, c + MIND.z * k + 1);
+  // the archery range: a mown strip with a target badge at the shooting line
+  g.fillStyle = '#8cc866';
+  box(ARCHERY.x - 1, ARCHERY.x + 31, ARCHERY.z - 5.5, ARCHERY.z + 5.5);
+  g.fillStyle = '#c8462e';
+  g.beginPath(); g.arc(c + (ARCHERY.x + 4) * k, c + ARCHERY.z * k, 17, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = '#ffffff'; g.lineWidth = 3; g.stroke();
+  g.fillText('🏹', c + (ARCHERY.x + 4) * k, c + ARCHERY.z * k + 1);
 }
 
 export function buildWorld(scene) {

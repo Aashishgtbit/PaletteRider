@@ -14,11 +14,13 @@ import { createNet } from './net.js';
 import { createMindGames } from './mind.js';
 
 // The painted city is the default world; add ?world=valley to ride the Himalayan valley.
-// Chapter 1 is the Klee city, chapter 2 is Van Gogh's Arles (?chapter=2), chapter 3 is Monet's garden (?chapter=3).
+// Chapter 1 is the Klee city, chapter 2 is Van Gogh's Arles (?chapter=2), chapter 3 is Monet's garden (?chapter=3),
+// chapter 4 is the real Lauterbrunnen valley in Hodler's colours (?chapter=4).
 const query = new URLSearchParams(location.search);
-const CHAPTERS = 3;
-const CHAPTER = [1, 2, 3].includes(Number(query.get('chapter'))) ? Number(query.get('chapter')) : 1;
-const W = query.get('world') === 'valley' ? valley : CHAPTER === 3 ? giverny : CHAPTER === 2 ? arles : city;
+const CHAPTERS = 4;
+const CHAPTER = [1, 2, 3, 4].includes(Number(query.get('chapter'))) ? Number(query.get('chapter')) : 1;
+// chapter 4 brings a map of a real valley with it, so it is only loaded when it is chosen
+const W = query.get('world') === 'valley' ? valley : CHAPTER === 4 ? await import('./swiss.js') : CHAPTER === 3 ? giverny : CHAPTER === 2 ? arles : city;
 const BEST_KEY = 'paletterider-best' + (W.INFO.id ? '-' + W.INFO.id : '');
 const HELP_KEY = 'paletterider-help';
 try {
@@ -687,7 +689,7 @@ function startGame(viaPainting = false) {
   P.y = heightAt(P.x, P.z);
   hero?.reset();
   setFoot(false);
-  if (SPOT_MIND && mind) { Object.assign(P, mind.doorway()); setFoot(true); P.y = heightAt(P.x, P.z); }
+  if (SPOT_MIND && mind) { Object.assign(P, mind.doorway(query.get('spot'))); setFoot(true); P.y = heightAt(P.x, P.z); }
   camYaw = P.yaw;
   Object.assign(G, { state: 'play', score: 0, carried: 0, delivered: 0, tricks: 0, time: NIGHT_SECONDS });
   stars.forEach(placeStar);
@@ -813,8 +815,6 @@ if (INFO.painting) {
 $('start').onclick = begin;
 // chapter picker on the title screen, and a way onward from the end screen
 if (W !== valley) {
-  $('chapters').classList.add('on');
-  $('ch' + CHAPTER).classList.add('active');
   $('nextCh').classList.add('on');
   $('nextCh').href = `?chapter=${(CHAPTER % CHAPTERS) + 1}`;
   $('nextCh').textContent = CHAPTER === CHAPTERS ? '‹ Back to chapter 1' : `Go to chapter ${CHAPTER + 1} ›`;
@@ -897,10 +897,10 @@ function collide() {
     P.x *= WORLD_R / r; P.z *= WORLD_R / r;
     P.speed *= 0.5; P.vx *= 0.5; P.vz *= 0.5;
   }
-  const dx = P.x - MON.x, dz = P.z - MON.z, d = Math.hypot(dx, dz);
-  if (d < 10 && P.y < HILL_H + 12) {
-    // the hall itself is solid
-    P.x = MON.x + (dx / d) * 10; P.z = MON.z + (dz / d) * 10;
+  const dx = P.x - MON.x, dz = P.z - MON.z, d = Math.hypot(dx, dz), monR = W.MON_R ?? 10;
+  if (monR && d < monR && P.y < HILL_H + 12) {
+    // the hall itself is solid (a world whose goal has its own walls sets MON_R to 0)
+    P.x = MON.x + (dx / d) * monR; P.z = MON.z + (dz / d) * monR;
     P.speed *= 0.4; P.vx *= 0.4; P.vz *= 0.4;
   }
   if (W.pushOut(P) > 8) tone(140, 0.2, 0.12, 'triangle');
@@ -1050,7 +1050,7 @@ function toggleFoot() {
 let nearSpot = null, toldGetOff = false;
 function interact() {
   if (!nearSpot || G.state !== 'play') return;
-  if (['hanoi', 'slide', 'memory'].includes(nearSpot.kind)) {
+  if (mind.games[nearSpot.kind]) {
     if (!P.onFoot) { toggleFoot(); return; } // get off first, then step up to the table
     for (const k in keys) keys[k] = false;
     keys.ax = keys.ay = 0;
@@ -1090,16 +1090,16 @@ function updateWalker(dt) {
 // what to offer near the pavilion: get off, play, or a table still to come
 function updateSpots() {
   const spot = G.state === 'play' && !intro && mind ? mind.near(P) : null;
-  nearSpot = spot && spot.kind !== 'pavilion' ? spot : null;
+  nearSpot = spot && spot.kind !== 'pavilion' && spot.kind !== 'range' ? spot : null;
   const act = $('actBtn');
   if (nearSpot) {
-    const game = ['hanoi', 'slide', 'memory'].includes(nearSpot.kind);
-    const icon = { hanoi: '🧩 ', slide: '🖼️ ', memory: '🃏 ' }[nearSpot.kind] || '';
+    const game = !!mind.games[nearSpot.kind];
+    const icon = { hanoi: '🧩 ', slide: '🖼️ ', memory: '🃏 ', archery: '🏹 ' }[nearSpot.kind] || '';
     $('actLabel').textContent = game && !P.onFoot ? '🚶 Get off to play' : icon + nearSpot.label;
     act.classList.toggle('soon', nearSpot.kind === 'soon');
   }
   act.classList.toggle('on', !!nearSpot);
-  if (spot && !P.onFoot && !toldGetOff) { toldGetOff = true; toast('Mind Games: get off your bike to play'); }
+  if (spot && !P.onFoot && !toldGetOff) { toldGetOff = true; toast(spot.kind === 'range' || spot.kind === 'archery' ? 'Archery: get off your bike to shoot' : 'Mind Games: get off your bike to play'); }
   if (!spot) toldGetOff = false;
   $('walkBtn').classList.toggle('on', G.state === 'play' && !intro && !hero);
 }
@@ -1450,9 +1450,9 @@ if (hero) bike.root.visible = false;
 
 // ---------- mind games ----------
 // A chapter with a MIND spot has the pavilion; the title screen's Mind Games link starts there on foot.
-const SPOT_MIND = query.get('spot') === 'mind' && !!W.MIND;
+const SPOT_MIND = ['mind', 'archery', 'hanoi', 'slide', 'memory'].includes(query.get('spot')) && !!W.MIND;
 const mind = W.MIND ? createMindGames({
-  scene, at: W.MIND, camera, renderer, composer, me: net.me, tone, toast,
+  scene, at: W.MIND, archeryAt: W.ARCHERY, camera, renderer, composer, me: net.me, tone, toast,
   onLeave() {
     G.state = 'play';
     walker.root.visible = P.onFoot;
@@ -1463,13 +1463,74 @@ const mind = W.MIND ? createMindGames({
 }) : null;
 $('walkBtn').addEventListener('click', (e) => { toggleFoot(); e.currentTarget.blur(); });
 $('actBtn').addEventListener('click', (e) => { interact(); e.currentTarget.blur(); });
-if (SPOT_MIND) { $('chMind').classList.add('active'); $('ch3').classList.remove('active'); }
 
 // ---------- main loop ----------
 document.title = INFO.title;
 $('title').textContent = INFO.title;
 $('subtitle').textContent = INFO.sub;
 $('how').innerHTML = INFO.how;
+
+// ---------- home screen: everything there is to play ----------
+// Under the painting: the rides (one a chapter) and the games in Monet's garden. A game card
+// starts chapter 3 on foot beside that game.
+const RIDES = [
+  { ch: 1, file: 'castle-and-sun.jpg', name: 'Castle and Sun', by: 'Paul Klee · 1928', line: 'A city of coloured blocks. Carry the little suns to the castle before dawn.' },
+  { ch: 2, file: 'cafe-terrace-at-night.jpg', name: 'Café Terrace at Night', by: 'Vincent van Gogh · 1888', line: 'Arles by night. Carry the fallen stars back to the café on the square.' },
+  { ch: 3, file: 'water-lily-pond.jpg', name: 'The Water Lily Pond', by: 'Claude Monet · 1899', line: 'Monet\'s garden in bloom. Bring flowers to the pink house before dusk.' },
+  { ch: 4, file: 'jungfrau-isenfluh.jpg', name: 'The Jungfrau', by: 'Ferdinand Hodler · 1902', line: 'The real Lauterbrunnen valley. Carry edelweiss to the village church.' },
+].filter((r) => r.ch <= CHAPTERS);
+const GAME_SPOTS = [
+  { spot: 'hanoi', icon: '🧩', name: 'Tower of Hanoi', kind: 'PUZZLE', line: 'Move the tower against the clock', at: 'the table' },
+  { spot: 'slide', icon: '🖼️', name: 'Painting Slide', kind: 'PUZZLE', line: 'Put a painting back together', at: 'the easel' },
+  { spot: 'memory', icon: '🃏', name: 'Memory Match', kind: 'PUZZLE', line: 'Find the pairs of painting details', at: 'the board' },
+  { spot: 'archery', icon: '🏹', name: 'Archery', kind: 'SPORT', line: 'Wind, a moving target, 5 or 10 arrows', at: 'the shooting line' },
+];
+if (W !== valley) {
+  const spot = SPOT_MIND ? query.get('spot') : null;
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
+  const head = (title, note) => { const h = el('div', 'cat-head'); h.append(el('b', '', title), el('span', '', note)); return h; };
+  const rides = el('div', 'cat-grid');
+  for (const r of RIDES) {
+    const a = el('a', 'cat-card ride');
+    a.href = `?chapter=${r.ch}`;
+    if (r.ch === CHAPTER && !spot) a.classList.add('active');
+    const im = el('img');
+    im.src = import.meta.env.BASE_URL + r.file; im.alt = ''; im.loading = 'lazy';
+    const body = el('div', 'cat-body');
+    body.append(el('small', '', `CHAPTER ${r.ch}`), el('b', '', r.name), el('i', '', r.by), el('p', '', r.line));
+    a.append(im, body);
+    rides.append(a);
+  }
+  const games = el('div', 'cat-grid games');
+  for (const g of GAME_SPOTS) {
+    const a = el('a', 'cat-card game');
+    a.href = `?chapter=3&spot=${g.spot}`;
+    if (g.spot === spot) a.classList.add('active');
+    const body = el('div', 'cat-body');
+    body.append(el('small', '', g.kind), el('b', '', g.name), el('i', '', g.line));
+    a.append(el('div', 'ico', g.icon), body);
+    games.append(a);
+  }
+  $('quick').append(el('span', '', 'OR PLAY'), ...GAME_SPOTS.map((g) => {
+    const a = el('a', g.spot === spot ? 'active' : '', `${g.icon} ${g.name}`);
+    a.href = `?chapter=3&spot=${g.spot}`;
+    return a;
+  }));
+  $('catalog').append(
+    head('RIDES', `${RIDES.length} paintings to ride into, each a world of its own`), rides,
+    head('GAMES', 'in Monet\'s garden (chapter 3): get off your bike and walk up to play'), games,
+    el('div', 'cat-foot', 'Every game keeps your best score and makes a score card to share · other riders appear live in every painting'),
+  );
+  // arriving from a game card: the title screen says which game, and the button takes you to it
+  const g = GAME_SPOTS.find((s) => s.spot === spot);
+  if (spot) {
+    $('subtitle').textContent = `${g ? g.name : 'Mind Games'} · in Monet's garden · Chapter 3`;
+    $('how').innerHTML = g
+      ? `${g.line}. You start on foot beside ${g.at}: press <em>E</em> or the <em>Play</em> button to begin. Your bicycle waits nearby for a ride round the garden afterwards.`
+      : 'A timber pavilion beside the flower avenue with three games to play against the clock. You start on foot at its door: walk up to a table and press <em>E</em> or the <em>Play</em> button.';
+    $('start').textContent = g ? `Play ${g.name}` : 'Walk into the garden';
+  }
+}
 $('goal').textContent = INFO.goal;
 $('goalS').textContent = INFO.icon;
 $('briefLead').textContent = INFO.brief;
